@@ -1,0 +1,10 @@
+name: build-windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  ping:
+    runs-on: windows-latest
+    steps:
+      - run: echo hello
