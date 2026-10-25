@@ -3,11 +3,11 @@ on: [workflow_dispatch]
 permissions:
   contents: write
 env:
-  ZIP: https://litter.catbox.moe/l69cni.zip
+  ZIP: https://litter.catbox.moe/dj2qhw.zip
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -19,7 +19,7 @@ jobs:
       - shell: pwsh
         env:
           HYBRID_QUIET_BUILD: '1'
-        run: pwsh -NoProfile -File work/installer/build-installer.ps1
+        run: pwsh -NoProfile -File work/installer/ci-build.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: setup
