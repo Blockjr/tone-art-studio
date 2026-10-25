@@ -1,10 +1,20 @@
-name: build-windows
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
+name: b
+on: [workflow_dispatch, push]
 jobs:
-  ping:
+  build:
     runs-on: windows-latest
     steps:
-      - run: echo hello
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: |
+          $z = Get-ChildItem -File -Filter 'Tone-Art-Studio-*-source.zip' | Select-Object -First 1
+          Expand-Archive $z.FullName -DestinationPath work -Force
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - shell: pwsh
+        run: pwsh -NoProfile -File work/installer/build-installer.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup
+          path: work/dist-installer/*.exe
