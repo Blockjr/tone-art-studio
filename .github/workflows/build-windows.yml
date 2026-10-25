@@ -3,7 +3,7 @@ on: [workflow_dispatch]
 permissions:
   contents: write
 env:
-  ZIP: https://litter.catbox.moe/rbgvdf.zip
+  ZIP: https://litter.catbox.moe/kg3oa2.zip
 jobs:
   build:
     runs-on: windows-latest
@@ -17,6 +17,8 @@ jobs:
           Invoke-WebRequest -Uri $env:ZIP -OutFile s.zip
           Expand-Archive -Path s.zip -DestinationPath work -Force
       - shell: pwsh
+        env:
+          HYBRID_QUIET_BUILD: '1'
         run: pwsh -NoProfile -File work/installer/build-installer.ps1
       - uses: actions/upload-artifact@v4
         with:
