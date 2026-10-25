@@ -1,20 +1,26 @@
 name: b
 on: [workflow_dispatch, push]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - shell: pwsh
         run: |
           $z = Get-ChildItem -File -Filter 'Tone-Art-Studio-*-source.zip' | Select-Object -First 1
           Expand-Archive $z.FullName -DestinationPath work -Force
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
       - shell: pwsh
         run: pwsh -NoProfile -File work/installer/build-installer.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: setup
           path: work/dist-installer/*.exe
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0.${{ github.run_number }}
+          files: work/dist-installer/*.exe
