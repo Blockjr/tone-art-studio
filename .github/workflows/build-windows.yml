@@ -1,19 +1,22 @@
-name: b
-on: [workflow_dispatch, push]
+name: build
+on: [workflow_dispatch]
 permissions:
   contents: write
+env:
+  ZIP: https://litter.catbox.moe/1f3846.zip
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - shell: pwsh
         run: |
-          $z = Get-ChildItem -File -Filter 'Tone-Art-Studio-*-source.zip' | Select-Object -First 1
-          Expand-Archive $z.FullName -DestinationPath work -Force
+          Invoke-WebRequest -Uri $env:ZIP -OutFile s.zip
+          Expand-Archive -Path s.zip -DestinationPath work -Force
+          Get-ChildItem work | Select-Object -First 8 Name
       - shell: pwsh
         run: pwsh -NoProfile -File work/installer/build-installer.ps1
       - uses: actions/upload-artifact@v4
