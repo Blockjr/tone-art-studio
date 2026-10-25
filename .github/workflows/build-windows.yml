@@ -1,63 +1,30 @@
 name: build
-
-# Builds the Windows installer from a snapshot of the project. The repository is
-# only a build harness: the sources are fetched as a zip so the C++ can be
-# compiled on a real Windows machine (this project is authored on Linux, where
-# neither ASIO nor WebView2 exists).
-
 on: [workflow_dispatch]
-
 permissions:
   contents: write
-
 env:
-  ZIP: https://litter.catbox.moe/5hx7b3.zip
-
+  ZIP: https://litter.catbox.moe/l69cni.zip
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     steps:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Fetch the sources
-        shell: pwsh
+      - shell: pwsh
         run: |
           Invoke-WebRequest -Uri $env:ZIP -OutFile s.zip
           Expand-Archive -Path s.zip -DestinationPath work -Force
-
-      - name: Build the UI, the host, the driver, the VST3 and the installer
-        shell: pwsh
+      - shell: pwsh
         env:
           HYBRID_QUIET_BUILD: '1'
         run: pwsh -NoProfile -File work/installer/build-installer.ps1
-
       - uses: actions/upload-artifact@v4
         with:
           name: setup
           path: work/dist-installer/*.exe
-          if-no-files-found: error
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app
-          path: work/native/build/HybridStudio_artefacts/Release/
-          if-no-files-found: warn
-
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.1.0
           files: work/dist-installer/*.exe
-
-      # A public link so the installer can be handed over without a GitHub login.
-      - name: Publish a download link
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem work/dist-installer/*.exe | Select-Object -First 1
-          Write-Host ('Built ' + $setup.Name + ' - ' + [math]::Round($setup.Length / 1MB, 1) + ' MB')
-          $form = 'fileToUpload=@' + $setup.FullName
-          $url = curl.exe -sS --max-time 300 -F reqtype=fileupload -F time=72h -F $form https://litterbox.catbox.moe/resources/internals/api.php
-          Write-Host ('DOWNLOAD-URL: ' + $url)
-          Write-Host ('DOWNLOAD-SHA256: ' + (Get-FileHash $setup.FullName -Algorithm SHA256).Hash)
