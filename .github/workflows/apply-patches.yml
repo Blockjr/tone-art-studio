@@ -1,32 +1,20 @@
 name: apply-patches
 
-# Applies a patch fetched over HTTPS and commits it.
+# Applies the patch files in .github/patches to the working tree and commits
+# them. It exists because the fixes were authored in a cloud worktree that has
+# no push credentials: the diff travels as text, git applies it here, and the
+# commit is made by the runner.
 #
-# It exists because the work is authored in a cloud worktree that has the source
-# and no push credentials: the diff travels as text, git applies it here, and the
-# runner makes the commit. The request is the first line of
-# .github/patches/REQUEST.txt - "<patch url> <sha256>" - so pushing that file
-# starts this job, and the download is checked by hash before a byte of it
-# reaches the tree.
+# Every patch is applied with `git apply` first and `patch --ignore-whitespace`
+# second, so a trailing space lost in transit cannot block the change. Each file
+# is then checked for the marker it is supposed to gain.
 #
-# The result is then checked for the markers the patch is supposed to add. A
-# patch that applies cleanly but lands its content somewhere else fails here,
-# not in a build nine minutes later.
+# Applied patches are deleted in the same commit: a patch that has been applied
+# is not a patch any more, and leaving it in the folder makes the next run fail
+# on a diff that can no longer be applied.
 
 on:
-  push:
-    paths:
-      - '.github/patches/REQUEST.txt'
   workflow_dispatch:
-    inputs:
-      patch_url:
-        description: HTTPS URL of the patch to apply
-        required: true
-        default: ''
-      expected_sha256:
-        description: SHA-256 the download has to match
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -34,86 +22,58 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read the request
-        id: request
+      - name: Apply every patch
         run: |
           set -euo pipefail
-          url='${{ inputs.patch_url }}'
-          want='${{ inputs.expected_sha256 }}'
-          if [ -z "$url" ] && [ -f .github/patches/REQUEST.txt ]; then
-            read -r url want < .github/patches/REQUEST.txt
-          fi
-          if [ -z "$url" ]; then
-            echo '::error::no patch URL: write "<url> <sha256>" into .github/patches/REQUEST.txt, or dispatch this job with patch_url'
+          shopt -s nullglob
+          patches=(.github/patches/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo '::error::no patches found'
             exit 1
           fi
-          {
-            echo "url=$url"
-            echo "want=$want"
-          } >> "$GITHUB_OUTPUT"
-          echo "requesting $url"
+          for p in "${patches[@]}"; do
+            echo "== $p"
+            if git apply -v --whitespace=nowarn "$p" 2>/dev/null; then
+              echo "applied with git apply"
+            else
+              echo "git apply refused it; retrying with patch(1)"
+              patch -p1 --batch --forward --ignore-whitespace < "$p"
+            fi
+          done
 
-      - name: Download it, and check the hash
-        env:
-          URL: ${{ steps.request.outputs.url }}
-          WANT: ${{ steps.request.outputs.want }}
+      - name: Check the result
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 --retry-delay 5 "$URL" -o /tmp/change.patch
-          actual=$(sha256sum /tmp/change.patch | cut -d' ' -f1)
-          echo "patch sha256: $actual"
-          echo "patch bytes : $(wc -c < /tmp/change.patch)"
-          echo "patch files : $(grep -c '^diff --git' /tmp/change.patch)"
-          if [ -n "$WANT" ] && [ "$actual" != "$WANT" ]; then
-            echo "::error::the patch is $actual, not the $WANT that was asked for"
-            exit 1
-          fi
+          grep -q 'announceUiReady' src/native/bridge.ts
+          grep -q 'announceUiReady' src/main.ts
+          grep -q 'findWebView2Version' native/Source/MainComponent.cpp
+          grep -q 'drawProblem' native/Source/MainComponent.cpp
+          grep -q 'uiReady' native/Source/MainComponent.h
+          grep -q 'MicrosoftEdgeWebView2Setup.exe' installer/ToneArtStudio.iss
+          grep -q 'WebView2KeyUser' installer/ToneArtStudio.iss
+          grep -q 'allowStudioDevices' desktop/main.cjs
+          grep -q 'setPermissionRequestHandler' desktop/main.cjs
+          grep -q 'midiSysex' desktop/main.cjs
+          grep -q "permissions.requestHandler" desktop/smoke-test.cjs
+          echo 'all markers present'
 
-      - name: Apply it
-        run: |
-          set -euo pipefail
-          if git apply -v --whitespace=nowarn /tmp/change.patch 2>/dev/null; then
-            echo 'applied with git apply'
-          else
-            echo 'git apply refused it; retrying with patch(1)'
-            patch -p1 --batch --forward --ignore-whitespace < /tmp/change.patch
-          fi
-
-      - name: Check what the patch was supposed to add
-        run: |
-          set -euo pipefail
-          # One marker per file the patch rewrites, taken from the part of it
-          # that is new. A patch that lands half its content elsewhere is caught
-          # here instead of by an installer that opens a blank window.
-          grep -q 'registerConsole' src/main.ts
-          grep -q 'detachButton' src/ui/consoles.ts
-          grep -q 'setTransportDelegate' src/audio/engine.ts
-          grep -q 'stopRemoteBridge' server/remote.mjs
-          grep -q 'tas:open-panel' desktop/main.cjs
-          grep -q 'listOutputDevices' src/audio/recorder.ts
-          grep -q 'Detached console windows' FEATURES.md
-          test -f src/core/sync.ts
-          test -f tests/sync.test.ts
-          test -f tests/audiodevices.test.ts
-          node -e "const p = require('./package.json'); if (!/^\d+\.\d+\.\d+$/.test(p.version)) process.exit(1); console.log('product version', p.version)"
-          echo 'every marker is present'
-
-      - name: Commit and push
+      - name: Commit
         run: |
           set -euo pipefail
           git config user.name 'Tone Art Studio build'
           git config user.email 'build@users.noreply.github.com'
+          # The patches go with the commit that applied them.
+          rm -f .github/patches/*.patch
           git add -A
           if git diff --cached --quiet; then
-            echo '::notice::nothing to commit: the patch is already in the tree'
+            echo '::notice::nothing to commit; the patches were already applied'
             exit 0
           fi
-          git commit \
-            -m 'Detach every console into its own window, and choose the audio interface' \
-            -m 'The mixer, browser, rack, preview, MIDI panel, takes, note editor and Studio Rig each open in a window of their own from the console header or the Consoles menu, remember where they were left, close with the studio, and follow one session over a broadcast channel instead of running a second copy of the project. The Studio Rig picks the interface input and output, checks the input level and tests the output, and the tablet bridge is released on the way out so the app closes like any other program.'
+          subject=$(head -n 1 .github/patches/REQUEST.txt 2>/dev/null || true)
+          [ -n "$subject" ] || subject='Apply the patches in .github/patches'
+          git commit -m "$subject"
           git push
           git --no-pager show --stat --oneline HEAD
