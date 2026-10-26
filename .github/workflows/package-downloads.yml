@@ -12,8 +12,7 @@ name: package-downloads
 #   - it hardcoded the 0.1.0 tag, name and hash, so it could only ever rebuild
 #     one old release;
 #   - ALL.zip only contained the app, so the "everything" download was missing
-#     the native engine (ASIO, VST3, the driver) and the driver on its own. That
-#     is the bug this file now exists to prevent: everything published goes in.
+#     the native engine (ASIO, VST3, the driver) and the driver on its own.
 #
 # Every installer is fetched from the release and verified against the hash the
 # release published before it is packed, and a missing expected file fails the
@@ -59,6 +58,13 @@ jobs:
           gh release download "$tag" --pattern 'ToneArtStudio*' --dir build/exe
           gh release download "$tag" --pattern 'SHA256SUMS.txt' --dir build/exe
 
+          # Windows writes this file with CRLF endings. Strip them once, here, so
+          # every later read is a plain grep against a file name: an anchored
+          # `grep 'name$'` never matches "name\r", and under `pipefail` a grep
+          # that matches nothing fails the whole step - which is exactly how the
+          # first version of this bundle job died without saying why.
+          tr -d '\r' < build/exe/SHA256SUMS.txt > build/exe/SHA256SUMS.unix.txt
+
           # The native engine and the app are both the product: one is the ASIO
           # DAW, the other is the interface and the tablet remote. Either one
           # missing means the bundle would be incomplete, so this fails here.
@@ -69,15 +75,13 @@ jobs:
             fi
           done
 
-          # The sums file is written on Windows, so it arrives with CRLF line
-          # endings: strip the carriage returns before checking, or the file name
-          # never matches and the check fails on a perfectly good installer.
-          #
           # The release's own sums file is the source of truth here, which is why
           # this cannot disagree with the hash a user would read on the release.
+          sums=build/exe/SHA256SUMS.unix.txt
+
           for file in "$app" "$host" "$driver"; do
             if [ -f "build/exe/$file" ]; then
-              tr -d '\r' < build/exe/SHA256SUMS.txt | grep -F "  $file" | ( cd build/exe && sha256sum -c - )
+              grep -F "  $file" "$sums" | ( cd build/exe && sha256sum -c - )
             else
               echo "::warning::$file is not in $tag; the bundle notes it is unavailable"
             fi
@@ -113,7 +117,7 @@ jobs:
             'as well. This app plays through its own browser engine; the engine is' \
             'the one that opens an ASIO device and hosts VST3 plugins.' \
             > "$d/INSTALL-WINDOWS.txt"
-          grep -F "  $APP" "$ws/build/exe/SHA256SUMS.txt" | tr -d '\r' > "$d/SHA256.txt"
+          grep -F "  $APP" "$ws/build/exe/SHA256SUMS.unix.txt" > "$d/SHA256.txt"
           (cd "$ws/build/1" && zip -qr "$out/ToneArtStudio-1-App-Installer.zip" .)
 
           # ---- 2. the desktop kit: app + tablet remote + both icons -----------
@@ -166,7 +170,13 @@ jobs:
             '' \
             "The driver on its own is $DRIVER, for a DAW you already use." \
             > "$d/INSTALL-ENGINE.txt"
-          grep -E "  ($HOST|$DRIVER)$" "$ws/build/exe/SHA256SUMS.txt" | tr -d '\r' > "$d/SHA256.txt"
+          grep -E "  ($HOST|$DRIVER)$" "$ws/build/exe/SHA256SUMS.unix.txt" > "$d/SHA256.txt"
+          # An empty sums file would mean the engine and the driver were packed
+          # without a way to check them, so say so instead of shipping it.
+          if [ ! -s "$d/SHA256.txt" ]; then
+            echo "::error::no sums matched $HOST or $DRIVER, so the engine zip cannot be verified"
+            exit 1
+          fi
           (cd "$ws/build/5" && zip -qr "$out/ToneArtStudio-5-Engine-ASIO-Driver.zip" .)
 
           # ---- everything -----------------------------------------------------
@@ -182,7 +192,10 @@ jobs:
           # carries a path.
           {
             (cd "$out" && sha256sum *.zip)
-            (cd "$ws/build/exe" && sha256sum *)
+            # The three published installers, by bare name. Not `*`: that would
+            # drag the internal SHA256SUMS.unix.txt helper into a list of files
+            # nobody has.
+            (cd "$ws/build/exe" && sha256sum ToneArtStudio*)
           } > "$out/SHA256.txt"
           cat "$out/SHA256.txt" && ls -l "$out"
 
