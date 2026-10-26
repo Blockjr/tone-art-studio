@@ -669,7 +669,10 @@ void auditSession (IASIO* driver, double rate, long frames, int wantedBlocks, co
     checkLong ((long) session.shared.block->toClient.underruns.load(), 1,
                "the studio master ring starved exactly once, before the first block");
 
-    std::vector<float> recorded ((std::size_t) queued, 0.0f);
+    // queued counts frames, and pop writes channelCount floats per frame, so the
+    // scratch buffer has to hold queued * channelCount samples: sizing it as
+    // `queued` floats had pop write twice past the end of the vector.
+    std::vector<float> recorded ((std::size_t) queued * hybridasio::channelCount, 0.0f);
     const auto drained = (long) hybridasio::pop (session.shared.block->toStudio, recorded.data(),
                                                  (std::uint32_t) queued);
 
