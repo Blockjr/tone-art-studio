@@ -1,8 +1,30 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
+/**
+ * Puts the version that was built into the interface's own label.
+ *
+ * That label is the first thing anyone looks at to tell whether they have the
+ * new build, and it was typed into index.html by hand: the published program
+ * introduced itself as v0.1 while the version around it was 0.6.0. The build
+ * now writes the version from package.json over whatever the markup says, so
+ * the number in the page cannot fall behind the number of the program.
+ */
+function appVersion() {
+  return {
+    name: 'app-version',
+    transformIndexHtml(html: string) {
+      return html.replace(/<em>Studio v[^<]*<\/em>/, `<em>Studio v${version as string}</em>`);
+    },
+  };
+}
 
 const previewHost = 'pv-627b01a47f85-7a81c619-de3d-4e0d-9902-777f5f1581a7.style.dev';
 
 export default defineConfig({
+  plugins: [appVersion()],
   server: {
     host: '0.0.0.0',
     port: 3000,
