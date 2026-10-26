@@ -1,0 +1,88 @@
+name: push-tree
+
+# Copies a source archive over the working tree and commits it to main.
+#
+# This is the maintained replacement for import-source: that one died on
+# `git status | head` under `pipefail` (SIGPIPE as soon as the listing was
+# longer than the head window, which a full source import always is), and it
+# tried to untar over the checkout's own `.git`. Both are fixed here, and the
+# archive's `.github` directory is ignored so a GITHUB_TOKEN push never has to
+# touch workflow files.
+#
+# Dispatch it with the archive URL, then dispatch native-windows.yml by hand:
+# a push made with GITHUB_TOKEN does not start other workflows.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Source archive (.zip) whose top level is a single folder
+        required: true
+        default: ''
+      expected_sha256:
+        description: Optional SHA-256 of the archive; the run fails if it differs
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and verify the archive
+        env:
+          URL: ${{ inputs.url }}
+          EXPECTED: ${{ inputs.expected_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$URL" ]; then
+            echo '::error::pass the source archive URL as the url input'
+            exit 1
+          fi
+          curl -fsSL --retry 3 --retry-delay 5 "$URL" -o /tmp/src.zip
+          actual=$(sha256sum /tmp/src.zip | cut -d' ' -f1)
+          echo "archive sha256: $actual"
+          if [ -n "$EXPECTED" ] && [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::archive SHA-256 $actual does not match $EXPECTED"
+            exit 1
+          fi
+
+      - name: Unpack over the working tree
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/src && mkdir -p /tmp/src
+          unzip -q /tmp/src.zip -d /tmp/src
+          top=$(find /tmp/src -maxdepth 1 -mindepth 1 -type d -print -quit)
+          if [ -z "$top" ]; then
+            echo '::error::archive has no top-level folder'
+            exit 1
+          fi
+          echo "unpacking $top"
+          rm -rf "$top/.github"
+          rm -f "$top/.git"
+          tar -C "$top" -cf - . | tar -C "$GITHUB_WORKSPACE" -xf -
+          git status --short > /tmp/status.txt || true
+          head -n 40 /tmp/status.txt || true
+          echo "files now present: $(git ls-files --others --exclude-standard | wc -l) new," \
+               "$(git diff --name-only | wc -l) changed," \
+               "$(git diff --name-only --diff-filter=D | wc -l) deleted"
+
+      - name: Commit the tree
+        run: |
+          set -euo pipefail
+          git config user.name 'Tone Art Studio build'
+          git config user.email 'build@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo '::notice::nothing to commit - the tree already matches the archive'
+            exit 0
+          fi
+          git commit -m 'Sync the Tone Art Studio source tree'
+          git push origin HEAD:main
