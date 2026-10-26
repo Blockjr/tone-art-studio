@@ -1,13 +1,14 @@
 name: publish-setup
 
-# Takes the setup program from the newest successful native-windows run and
-# publishes it: as the release asset, and as a copy inside the repository.
+# Takes the setup program from the newest native-windows run that uploaded the
+# `tone-art-studio-setup` artifact and publishes it: as the release asset, and
+# as a copy inside the repository.
 #
-# It exists because native-windows itself failed on its last step only:
+# It exists because native-windows failed on its very last step only:
 # `gh release upload --clobber` reported an error while the build, the driver,
 # the VST3 and the installer had all already been produced and uploaded as
-# artifacts. Re-running this job reuses that build instead of paying for
-# another nine-minute MSVC pass.
+# artifacts. Re-running this job reuses that build instead of paying for another
+# nine-minute MSVC pass.
 
 on:
   workflow_dispatch:
@@ -23,16 +24,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch the setup program from the newest successful build
+      - name: Fetch the setup program from the newest usable build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          run=$(gh run list --workflow native-windows.yml --status success --limit 1 \
-                  --json databaseId --jq '.[0].databaseId')
+          # The run that carries the artifact is not necessarily the newest one
+          # with a green tick: `native-windows` builds first and publishes last,
+          # so a failed publish step still leaves a complete installer behind.
+          run=""
+          for id in $(gh run list --workflow native-windows.yml --limit 8 \
+                        --json databaseId --jq '.[].databaseId'); do
+            if gh run download "$id" --name tone-art-studio-setup --dir /tmp/out 2>/dev/null; then
+              run="$id"
+              break
+            fi
+          done
+          if [ -z "$run" ]; then
+            echo '::error::no native-windows run has a tone-art-studio-setup artifact'
+            exit 1
+          fi
           echo "build run: $run"
-          rm -rf /tmp/out && mkdir -p /tmp/out
-          gh run download "$run" --name tone-art-studio-setup --dir /tmp/out
           find /tmp/out -type f -printf '%s  %p\n'
 
       - name: Publish it as the release asset
@@ -50,7 +62,8 @@ jobs:
           gh release view v0.1.0 > /dev/null 2>&1 \
             || gh release create v0.1.0 --title 'Tone Art Studio 0.1.0' --notes 'Windows build of Tone Art Studio 0.1.0.'
           gh release upload v0.1.0 "$exe" --clobber
-          gh release view v0.1.0 --json assets --jq '.assets[] | "\(.name)  \(.size) bytes  \(.digest)"'
+          gh release view v0.1.0 --json assets \
+            --jq '.assets[] | "\(.name)  \(.size) bytes  \(.digest)"'
 
       - name: Keep a copy in the repository
         run: |
