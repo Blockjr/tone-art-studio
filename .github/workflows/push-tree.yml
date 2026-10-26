@@ -59,6 +59,20 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/src && mkdir -p /tmp/src
           unzip -q /tmp/src.zip -d /tmp/src
+
+          # Exactly one top-level entry, and it has to be a folder. An archive
+          # built from the *contents* of a folder has several entries here, and
+          # the old `find -print -quit` then silently picked one of them and
+          # unpacked that folder's contents into the repository root - which is
+          # how a copy of native/VirtualAsio once landed at the top level and
+          # overwrote README.md.
+          count=$(find /tmp/src -maxdepth 1 -mindepth 1 | wc -l)
+          if [ "$count" != "1" ]; then
+            echo "::error::the archive must hold exactly one top-level folder, found $count top-level entries"
+            find /tmp/src -maxdepth 1 -mindepth 1
+            exit 1
+          fi
+
           top=$(find /tmp/src -maxdepth 1 -mindepth 1 -type d -print -quit)
           if [ -z "$top" ]; then
             echo '::error::archive has no top-level folder'

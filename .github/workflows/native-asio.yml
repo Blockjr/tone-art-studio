@@ -1,0 +1,80 @@
+name: native-asio
+
+# The virtual ASIO driver and the bridge behind it, on Windows, on their own.
+#
+# native-windows.yml already builds and registers the driver, but proving that
+# takes a full JUCE build: a FetchContent clone, WebView2, VST3, Inno Setup. That
+# is the wrong place to find out that a change to the shared block broke the
+# audio path, so this job builds the driver directory alone - four source files,
+# no JUCE - and then runs the bridge self-test on it.
+#
+# The self-test is the second application the bridge normally needs. It loads the
+# DLL through DllGetClassObject (so no registration and no elevation), creates the
+# driver in its own process, plays the studio's half of the shared block, and
+# accounts for every sample the driver hands back in both directions. A green run
+# here means the loopback works; what is left for real hardware is a sound card.
+#
+# The ASIO SDK headers are the three files JUCE vendors, fetched from the same tag
+# native/CMakeLists.txt pins. Nothing else about JUCE is needed to compile this.
+
+on:
+  push:
+    paths:
+      - "native/VirtualAsio/**"
+      - "native/Source/HybridAsioShared.h"
+      - "installer/test-virtual-asio.ps1"
+      - ".github/workflows/native-asio.yml"
+  pull_request:
+    paths:
+      - "native/VirtualAsio/**"
+      - "native/Source/HybridAsioShared.h"
+  workflow_dispatch:
+
+jobs:
+  bridge:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the Steinberg ASIO SDK headers JUCE vendors
+        shell: pwsh
+        run: |
+          $ref = '9.0.4'   # keep in step with GIT_TAG in native/CMakeLists.txt
+          $base = "https://raw.githubusercontent.com/juce-framework/JUCE/$ref/modules/juce_audio_devices/native/asio"
+          New-Item -ItemType Directory -Force -Path 'asio-sdk/common' | Out-Null
+          foreach ($header in 'asio.h', 'asiosys.h', 'iasiodrv.h') {
+            Invoke-WebRequest -Uri "$base/$header" -OutFile "asio-sdk/common/$header"
+          }
+          Get-ChildItem 'asio-sdk/common' | Select-Object Name, Length
+
+      - name: Build the driver and the bridge self-test
+        shell: pwsh
+        env:
+          ASIO_SDK_DIR: ${{ github.workspace }}/asio-sdk
+        run: |
+          # native/VirtualAsio configures on its own: it is the whole project here.
+          cmake -S native/VirtualAsio -B build-asio -A x64
+          if ($LASTEXITCODE -ne 0) { throw "The CMake configure failed ($LASTEXITCODE)." }
+
+          cmake --build build-asio --config Release
+          if ($LASTEXITCODE -ne 0) { throw "The build failed ($LASTEXITCODE)." }
+
+      - name: Run the bridge self-test
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem 'build-asio' -Recurse -Filter 'HybridVirtualAsio.dll' |
+                   Select-Object -First 1
+          if (-not $dll) { throw 'HybridVirtualAsio.dll was not built.' }
+
+          $exe = Get-ChildItem 'build-asio' -Recurse -Filter 'ToneArtVirtualAsioTest.exe' |
+                   Select-Object -First 1
+          if (-not $exe) { throw 'ToneArtVirtualAsioTest.exe was not built.' }
+
+          Write-Host ("driver: {0} ({1:N0} bytes)" -f $dll.FullName, $dll.Length)
+          Write-Host ("sha256: " + (Get-FileHash $dll.FullName -Algorithm SHA256).Hash)
+
+          & $exe.FullName
+          if ($LASTEXITCODE -ne 0) {
+            throw "The driver-to-studio bridge failed its self-test (exit $LASTEXITCODE)."
+          }
