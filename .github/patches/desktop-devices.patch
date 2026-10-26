@@ -1,0 +1,77 @@
+diff --git a/desktop/main.cjs b/desktop/main.cjs
+index 32f7d4a..a9a6188 100644
+--- a/desktop/main.cjs
++++ b/desktop/main.cjs
+@@ -14,7 +14,7 @@
+  * http:// document exactly as in a browser and are refused from file://.
+  */
+ 
+-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, screen } = require('electron');
++const { app, BrowserWindow, Menu, dialog, shell, ipcMain, screen, session } = require('electron');
+ const path = require('node:path');
+ const fs = require('node:fs');
+ const os = require('node:os');
+@@ -441,8 +441,63 @@ function explainsOneDisplay(title) {
+   }).catch(() => {});
+ }
+ 
++/**
++ * Lets the interface reach the devices a studio is built on, and nothing else.
++ *
++ * Chromium does not hand a page a microphone or a MIDI port until the shell
++ * approves the request, and it refuses by default. That default is why a
++ * controller or an audio interface plugged into the machine never showed up in
++ * the installed app: `requestMIDIAccess()` and `getUserMedia()` were both
++ * rejected before they ever reached the device, while the same interface in a
++ * browser worked. Approval is scoped to the studio's own loopback origin, to
++ * audio rather than camera, and to ordinary MIDI plus sysex; every other
++ * origin and every other permission is still refused.
++ */
++function allowStudioDevices(origin) {
++  const allowed = new Set(['media', 'midi', 'midiSysex', 'fullscreen']);
++  const ownOrigin = (url) => {
++    if (typeof url !== 'string' || url === '') return false;
++    try {
++      return new URL(url).origin === new URL(origin).origin;
++    } catch {
++      return false;
++    }
++  };
++  // A request carries the page it came from; fall back to the window's own URL.
++  const originOf = (contents, details) =>
++    (details && (details.requestingUrl || details.securityOrigin)) ||
++    (contents && typeof contents.getURL === 'function' ? contents.getURL() : '');
++  // Sound, never pictures: a studio records audio, and an app that grants a
++  // camera nobody asked for is an app nobody should trust.
++  const audioOnly = (details) => {
++    const types = (details && details.mediaTypes) || [];
++    if (types.includes('video')) return false;
++    return types.length === 0 || types.includes('audio');
++  };
++
++  const target = session.defaultSession;
++
++  target.setPermissionRequestHandler((contents, permission, callback, details) => {
++    if (!ownOrigin(originOf(contents, details))) return callback(false);
++    if (permission === 'media') return callback(audioOnly(details));
++    callback(allowed.has(permission));
++  });
++
++  // The same question is also asked synchronously, and a request the shell
++  // would approve must not be reported as refused there.
++  target.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
++    if (!ownOrigin(originOf(contents, { requestingUrl: requestingOrigin }))) return false;
++    if (permission === 'media') return audioOnly(details);
++    return allowed.has(permission);
++  });
++
++  // A device the user already granted stays usable across page loads.
++  target.setDevicePermissionHandler((details) => ownOrigin(details && details.origin));
++}
++
+ async function createWindow() {
+   uiServer = await startUiServer(uiDirectory);
++  allowStudioDevices(uiServer.url);
+ 
+   // Remembered bounds, but never smaller than the layout can use and never
+   // off-screen: a saved position on a monitor that is no longer connected
