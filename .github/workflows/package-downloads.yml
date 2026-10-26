@@ -7,7 +7,7 @@ name: package-downloads
 # from package.json and the release's own SHA256SUMS.txt, so a run after any
 # release packs that release.
 #
-# Three mistakes this file has already made and must not make again:
+# Four mistakes this file has already made and must not make again:
 #
 #   - it hardcoded the 0.1.0 tag, name and hash, so it could only ever rebuild
 #     one old release;
@@ -15,23 +15,54 @@ name: package-downloads
 #     the native engine (ASIO, VST3, the driver) and the driver on its own;
 #   - it downloaded and hashed by wildcard, which swept the bundle zips from
 #     earlier runs into the new sums file as duplicate lines with stale hashes,
-#     so `sha256sum -c` failed on good downloads.
+#     so `sha256sum -c` failed on good downloads;
+#   - it only ran when somebody dispatched it by hand, so the installers were
+#     re-published at 15:19 while ToneArtStudio-ALL.zip still carried the 14:54
+#     build: the "everything" download was one build behind the files sitting
+#     next to it on the same release page.
+#
+# That last one is why this job now starts by itself: it runs when the job that
+# publishes the installers finishes, so the bundles cannot lag the release they
+# describe.
 
 on:
+  workflow_run:
+    workflows: [native-windows, publish-setup]
+    types: [completed]
   workflow_dispatch:
+
+# native-windows and this job share one queue, so a bundle cannot be assembled
+# out of a release that is halfway through being replaced.
+concurrency:
+  group: tone-art-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   package:
+    # A hand dispatch, or a run that pushed a new release. Never a pull request
+    # (those publish nothing) and never a failed build (nothing new to pack).
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
     steps:
+      # The builds being packed are the ones the triggering run produced, so the
+      # source zip and the web build have to come from that same commit. A hand
+      # dispatch has no triggering run and packs the default branch.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      # 24, not 20: package.json declares >= 22.12 and every dependency built
+      # here needs it. The pin sat at 20 while the toolchain moved on, which this
+      # job's own log showed as EBADENGINE warnings.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
 
       - name: Fetch and verify every published build
@@ -194,23 +225,40 @@ jobs:
             ToneArtStudio-4-Web-Build.zip \
             ToneArtStudio-5-Engine-ASIO-Driver.zip)
 
+          # One sums file for the whole release: the three installers and every
+          # bundle zip, each hashed from the file that is about to be uploaded,
+          # so `sha256sum -c SHA256SUMS.txt` checks any download from one place.
+          #
+          # It is built from scratch and never appended to, and there is no
+          # second sums file, because two of them is how a stale one survived:
+          # the other still listed the installers of the build that this one
+          # replaced.
+          #
           # Bare file names only, and never a wildcard: a sums file has to be
           # usable with `sha256sum -c` from the folder the files are in, and the
           # folder it is built from also holds the release's own SHA256SUMS.txt
           # and the CR-stripped copy of it, which are not downloads.
           {
-            (cd "$out" && sha256sum *.zip)
             (cd "$ws/build/exe" && sha256sum "$APP" "$HOST")
             if [ -f "$ws/build/exe/$DRIVER" ]; then
               (cd "$ws/build/exe" && sha256sum "$DRIVER")
             fi
-          } > "$out/SHA256.txt"
-          cat "$out/SHA256.txt" && ls -l "$out"
+            (cd "$out" && sha256sum *.zip)
+          } > "$out/SHA256SUMS.txt"
+          cat "$out/SHA256SUMS.txt" && ls -l "$out"
 
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload "$TAG" build/out/*.zip build/out/SHA256.txt --clobber
-          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
+          gh release upload "$TAG" build/out/*.zip build/out/SHA256SUMS.txt --clobber
+
+          # The old second sums file listed the installers that existed when it
+          # was written. Those files were replaced afterwards, so it named hashes
+          # that are not on the release any more, and nothing published may point
+          # at something that no longer exists. An asset that is not there is
+          # not an error.
+          gh release delete-asset "$TAG" SHA256.txt --yes || true
+
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size) bytes  \(.digest)"'
