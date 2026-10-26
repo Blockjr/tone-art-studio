@@ -16,6 +16,13 @@ if(NOT PROJECT_VERSION)
   project(HybridVirtualAsioStandalone VERSION 0.1.0 LANGUAGES CXX)
 endif()
 
+# Everything here is C++20: the shared block is inline constexpr and std::atomic,
+# and the driver leans on if constexpr. The parent build sets this for the whole
+# project; configured on its own, this file is the only chance to say so, and
+# MSVC otherwise falls back to C++14 and refuses to compile the headers.
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # JUCE 9 vendors the ASIO SDK straight into modules/juce_audio_devices/native/asio
 # (no submodule, no 'common' subdirectory); JUCE 8 keeps it in ./asio/common.
 # Both layouts, plus an SDK passed with -DASIO_SDK_DIR, are accepted.
