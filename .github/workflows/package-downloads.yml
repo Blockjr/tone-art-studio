@@ -1,19 +1,24 @@
 name: package-downloads
 
-# Packs the four delivery zips around the installer that is already published
-# and attaches them to the v0.1.0 release. The installer is fetched from the
-# release asset and checked against a pinned SHA-256 first, so a stale exe can
-# never be packed inside the kit.
+# Packs the four delivery zips around the installer that is already published and
+# attaches them to that release.
+#
+# Nothing here pins a version. The tag, the installer's name and the hash it is
+# checked against all come from package.json and the release's own
+# SHA256SUMS.txt, so a run after any release packs that release. The previous
+# form of this workflow hardcoded the 0.1.0 tag, the 0.1.0 file name and a
+# 0.1.0 hash, which meant it could only ever rebuild one old release - and it
+# would have failed its own checksum gate the moment that asset changed.
+#
+# The installer is fetched from the release asset and verified against the hash
+# the release published before it is put inside a zip, so a stale or truncated
+# download can never be packed into a kit.
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
-
-env:
-  EXE: ToneArtStudioSetup-0.1.0.exe
-  EXE_SHA: 0cf9c6d81838bc4180efd6db393c1116a44bd98b2d6cf406d3477ae68cfde3ce
 
 jobs:
   package:
@@ -27,15 +32,40 @@ jobs:
           cache: npm
 
       - name: Fetch and verify the published installer
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          exe="ToneArtStudioSetup-$version.exe"
+
+          {
+            echo "VERSION=$version"
+            echo "TAG=$tag"
+            echo "EXE=$exe"
+          } >> "$GITHUB_ENV"
+
           mkdir -p build/exe
-          curl -sSL -o "build/exe/$EXE" \
-            "https://github.com/$GITHUB_REPOSITORY/releases/download/v0.1.0/$EXE"
-          echo "$EXE_SHA  build/exe/$EXE" | sha256sum -c -
+          gh release download "$tag" --pattern "$exe" --dir build/exe
+          gh release download "$tag" --pattern 'SHA256SUMS.txt' --dir build/exe
+
+          if [ ! -f "build/exe/$exe" ]; then
+            echo "::error::$tag does not carry $exe, so there is nothing to pack"
+            exit 1
+          fi
+
+          # The sums file is written on Windows, so it arrives with CRLF line
+          # endings: strip the carriage returns before checking, or the file name
+          # never matches and the check fails on a perfectly good installer.
+          #
+          # The release's own sums file is the source of truth here, which is why
+          # this cannot disagree with the hash a user would read on the release.
+          ( cd build/exe && tr -d '\r' < SHA256SUMS.txt | grep -F "  $exe" | sha256sum -c - )
+          ls -l build/exe
 
       - name: Build the web UI
-        run: npm ci && npm run build
+        run: npm ci --no-audit --no-fund && npm run build
 
       - name: Assemble the zips
         run: |
@@ -49,31 +79,35 @@ jobs:
           mkdir -p "$d"
           cp "$exe" "$d/"
           printf '%s\r\n' \
-            'TONE ART STUDIO 0.1.0 - WINDOWS APP' \
+            "TONE ART STUDIO $VERSION - WINDOWS APP" \
             '' \
-            '1. Double-click ToneArtStudioSetup-0.1.0.exe.' \
+            "1. Double-click $EXE." \
             '2. If Windows says "Windows protected your PC", click More info, then Run anyway.' \
-            '3. Click Next through the wizard. Leave the audio driver task ticked.' \
+            '3. Click Next through the wizard.' \
             '4. Start "Tone Art Studio" from the Start menu or the Desktop icon.' \
             '' \
             'The app runs locally: no account, no sign-in, no internet needed.' \
+            'For ASIO, install ToneArtStudioHostSetup from the same release.' \
             > "$d/INSTALL-WINDOWS.txt"
-          printf '%s  %s\n' "$EXE_SHA" "$EXE" > "$d/SHA256.txt"
+          grep -F "  $EXE" "$ws/build/exe/SHA256SUMS.txt" | tr -d '\r' > "$d/SHA256.txt"
           (cd "$ws/build/1" && zip -qr "$out/ToneArtStudio-1-App-Installer.zip" .)
 
+          # The kit is shipped without an installer on purpose: its setup script
+          # downloads the newest published one. Dropping this release's copy
+          # beside it means the double-click flow works offline as well.
           mkdir -p "$ws/build/2"
           cp -r "$ws/remote-kit" "$ws/build/2/ToneArtStudio-Desktop"
           cp "$exe" "$ws/build/2/ToneArtStudio-Desktop/"
           (cd "$ws/build/2" && zip -qr "$out/ToneArtStudio-2-Desktop-and-Remote-Kit.zip" .)
 
-          git archive --format=zip --prefix=Tone-Art-Studio-0.1.0/ \
+          git archive --format=zip --prefix="Tone-Art-Studio-$VERSION/" \
             -o "$out/ToneArtStudio-3-Source-Code.zip" HEAD
 
           mkdir -p "$ws/build/4"
           cp -r "$ws/dist" "$ws/build/4/ToneArtStudio-Web"
           rm -rf "$ws/build/4/ToneArtStudio-Web/download"
           printf '%s\r\n' \
-            'TONE ART STUDIO 0.1.0 - WEB BUILD' \
+            "TONE ART STUDIO $VERSION - WEB BUILD" \
             '' \
             'A static site. Serve it over HTTP from this directory, not file://:' \
             '' \
@@ -91,5 +125,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload v0.1.0 build/out/*.zip build/out/SHA256.txt --clobber
-          gh release view v0.1.0 --json assets --jq '.assets[] | "\(.name)  \(.size)"'
+          gh release upload "$TAG" build/out/*.zip build/out/SHA256.txt --clobber
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
