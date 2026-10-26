@@ -1,9 +1,13 @@
 name: native-windows
 
-# Builds the JUCE host (ASIO + WebView2 + VST3), the virtual ASIO driver and the
-# Inno Setup installer on a real Windows machine. This is the only place the C++
-# is compiled: the project itself is authored on Linux, where neither ASIO nor
-# WebView2 exists.
+# Builds the JUCE host (ASIO + WebView2 + VST3), the virtual ASIO driver and both
+# installers on a real Windows machine, then publishes them.
+#
+# Two different programs come out of this job and they are not interchangeable:
+#
+#   dist-installer\ToneArtStudioSetup-<version>.exe      the installed desktop app (Electron)
+#   dist-native\ToneArtStudioHostSetup-<version>.exe     the native engine: ASIO, VST3, the driver
+#   dist-native\ToneArtVirtualAsio-<version>.zip         just the driver, for another DAW
 #
 # installer/ci-build.ps1 is the entry point (it guarantees Inno Setup, then runs
 # installer/build-installer.ps1 - Visual Studio discovery, the WebView2 SDK, the
@@ -49,15 +53,51 @@ jobs:
 
       # One entry point for the whole chain, the same script a local run uses:
       # web UI, JUCE host, virtual ASIO driver, Tone Art Gate VST3, Inno Setup.
-      # It prints the installer's SHA-256 and a 72-hour public download link.
-      - name: Build the host, the driver, the VST3 and the installer
+      - name: Build the host, the driver, the VST3 and the installers
         shell: pwsh
         run: ./installer/ci-build.ps1
+
+      # The driver is an optional CMake target: when its ASIO headers are
+      # missing the configure step warns and carries on, which used to leave a
+      # release without a driver and no failure to show for it. This step is the
+      # line in the sand - no driver, no green build.
+      - name: Verify the virtual ASIO driver was built
+        shell: pwsh
+        run: |
+          $dll = 'native/build/HybridStudio_artefacts/Release/HybridVirtualAsio.dll'
+          if (-not (Test-Path $dll)) {
+            throw "HybridVirtualAsio.dll was not produced. The ASIO SDK headers are missing: check the 'Fetching the Steinberg ASIO SDK' step in the log."
+          }
+          $item = Get-Item $dll
+          Write-Host ("driver: {0} ({1:N0} bytes)" -f $item.Name, $item.Length)
+          Write-Host ("sha256: " + (Get-FileHash $dll -Algorithm SHA256).Hash)
+
+          $hostSetup = Get-ChildItem 'dist-native/*.exe' -ErrorAction SilentlyContinue
+          if (-not $hostSetup) { throw 'The native host installer was not produced in dist-native.' }
+          $hostSetup | ForEach-Object { Write-Host ("host setup: {0} ({1:N0} bytes)" -f $_.Name, $_.Length) }
+
+      # A driver-only download: someone who already has a DAW may only want the
+      # ASIO device, not a second copy of the studio.
+      - name: Package the driver on its own
+        shell: pwsh
+        run: |
+          $release = 'native/build/HybridStudio_artefacts/Release'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $stage = 'dist-native/virtual-asio'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "$release/HybridVirtualAsio.dll" $stage
+          Copy-Item "$release/install-virtual-asio.ps1" $stage
+          Copy-Item 'native/VirtualAsio/README.md' "$stage/README.md"
+          $zip = "dist-native/ToneArtVirtualAsio-$version.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
+          Write-Host ("driver package: {0} ({1:N0} bytes)" -f $zip, (Get-Item $zip).Length)
 
       - name: Show what was built
         shell: pwsh
         run: |
-          Get-ChildItem dist-installer | Select-Object Name, Length
+          Get-ChildItem 'dist-installer/*.exe' -ErrorAction SilentlyContinue |
+            Select-Object Name, Length
+          Get-ChildItem dist-native | Select-Object Name, Length
           Get-ChildItem -Recurse native/build/HybridStudio_artefacts/Release |
             Select-Object FullName, Length
 
@@ -73,15 +113,26 @@ jobs:
           path: native/build/ToneArtGate_artefacts/Release/VST3/Tone Art Gate.vst3
           if-no-files-found: error
 
+      # The installed desktop app. This is the file the release page has to lead
+      # with, so it keeps the name everybody already downloads.
       - uses: actions/upload-artifact@v4
         with:
           name: tone-art-studio-setup
           path: dist-installer/*.exe
           if-no-files-found: error
 
+      # The engine and the driver. Both were built and thrown away before.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tone-art-host-setup
+          path: |
+            dist-native/*.exe
+            dist-native/*.zip
+          if-no-files-found: error
+
       # A release asset is a plain download; an artifact needs a signed-in
       # GitHub session and is deleted after 90 days.
-      - name: Publish the installer
+      - name: Publish to the release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
@@ -89,9 +140,26 @@ jobs:
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = "v$version"
-          $setup = Get-ChildItem dist-installer/*.exe | Select-Object -First 1
           gh release view $tag 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --title "Tone Art Studio $version" --notes "Windows build of Tone Art Studio $version: the desktop host (ASIO, VST3, WebView2), the bundled Tone Art Gate plugin and the virtual ASIO driver."
+            gh release create $tag --title "Tone Art Studio $version" --notes "Windows builds of Tone Art Studio $version. ToneArtStudioSetup is the installed desktop app; ToneArtStudioHostSetup is the native engine with ASIO, VST3 hosting and the Tone Art Virtual ASIO driver; ToneArtVirtualAsio is the driver on its own for another DAW."
           }
-          gh release upload $tag $setup.FullName --clobber
+
+          $files = @()
+          $files += Get-ChildItem 'dist-installer/*.exe' | Select-Object -ExpandProperty FullName
+          $files += Get-ChildItem 'dist-native/*.exe' | Select-Object -ExpandProperty FullName
+          $files += Get-ChildItem 'dist-native/*.zip' | Select-Object -ExpandProperty FullName
+
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            $name = Split-Path -Leaf $file
+            Write-Host ("{0}  {1}" -f $hash, $name)
+            "$hash  $name"
+          }
+          $lines | Set-Content -Path 'dist-native/SHA256SUMS.txt' -Encoding ascii
+          $files += 'dist-native/SHA256SUMS.txt'
+
+          # An array expands to one argument per element for a native command.
+          gh release upload $tag $files --clobber
+          gh release view $tag --json assets `
+            --jq '.assets[] | "\(.name)  \(.size) bytes  \(.digest)"'
