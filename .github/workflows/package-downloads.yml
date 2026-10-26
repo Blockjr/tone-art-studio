@@ -1,22 +1,15 @@
 name: package-downloads
 
-# Builds the four delivery zips around the installer that is already published,
-# then attaches them to the v0.1.0 release so they are plain downloads.
-#
-# The installer is fetched from the release asset and checked against a pinned
-# SHA-256 before anything is packed: if the asset is ever replaced by a
-| different build, this fails instead of quietly shipping a stale exe inside
-# the kit.
-#
-# Only workflow_dispatch: packaging is a release step, not something every push
-# to src/ should pay for.
+# Packs the four delivery zips around the installer that is already published
+# and attaches them to the v0.1.0 release. The installer is fetched from the
+# release asset and checked against a pinned SHA-256 first, so a stale exe can
+# never be packed inside the kit.
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
-  actions: read
 
 env:
   EXE: ToneArtStudioSetup-0.1.0.exe
@@ -25,7 +18,6 @@ env:
 jobs:
   package:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -34,21 +26,18 @@ jobs:
           node-version: "20"
           cache: npm
 
-      - name: Fetch the published installer and verify it
+      - name: Fetch and verify the published installer
         run: |
           set -euo pipefail
           mkdir -p build/exe
           curl -sSL -o "build/exe/$EXE" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v0.1.0/$EXE"
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/v0.1.0/$EXE"
           echo "$EXE_SHA  build/exe/$EXE" | sha256sum -c -
 
       - name: Build the web UI
-        run: |
-          set -euo pipefail
-          npm ci
-          npm run build
+        run: npm ci && npm run build
 
-      - name: Assemble the downloads
+      - name: Assemble the zips
         run: |
           set -euo pipefail
           ws=$GITHUB_WORKSPACE
@@ -56,78 +45,51 @@ jobs:
           exe=$ws/build/exe/$EXE
           mkdir -p "$out"
 
-          # 1 - the installer on its own.
           d=$ws/build/1/ToneArtStudio-1-App-Installer
           mkdir -p "$d"
           cp "$exe" "$d/"
-          cat > "$d/INSTALL-WINDOWS.txt" <<'TXT'
-          TONE ART STUDIO 0.1.0 - WINDOWS APP
-          ===================================
-
-          1. Double-click ToneArtStudioSetup-0.1.0.exe.
-          2. If Windows says "Windows protected your PC", click More info, then
-             Run anyway. The installer is not code-signed, so SmartScreen always
-             says that for an unsigned setup.
-          3. Click Next through the wizard. Leave the audio driver task ticked:
-             it registers the Tone Art Virtual ASIO driver.
-          4. Start "Tone Art Studio" from the Start menu or the Desktop icon.
-
-          The app runs locally. No account, no sign-in, no internet needed after
-          the install.
-          TXT
+          printf '%s\r\n' \
+            'TONE ART STUDIO 0.1.0 - WINDOWS APP' \
+            '' \
+            '1. Double-click ToneArtStudioSetup-0.1.0.exe.' \
+            '2. If Windows says "Windows protected your PC", click More info, then Run anyway.' \
+            '3. Click Next through the wizard. Leave the audio driver task ticked.' \
+            '4. Start "Tone Art Studio" from the Start menu or the Desktop icon.' \
+            '' \
+            'The app runs locally: no account, no sign-in, no internet needed.' \
+            > "$d/INSTALL-WINDOWS.txt"
           printf '%s  %s\n' "$EXE_SHA" "$EXE" > "$d/SHA256.txt"
           (cd "$ws/build/1" && zip -qr "$out/ToneArtStudio-1-App-Installer.zip" .)
 
-          # 2 - the kit: installer, tablet remote, and the script that puts both
-          #     icons on the Desktop.
           mkdir -p "$ws/build/2"
           cp -r "$ws/remote-kit" "$ws/build/2/ToneArtStudio-Desktop"
           cp "$exe" "$ws/build/2/ToneArtStudio-Desktop/"
           (cd "$ws/build/2" && zip -qr "$out/ToneArtStudio-2-Desktop-and-Remote-Kit.zip" .)
 
-          # 3 - the finished source tree, straight out of git.
           git archive --format=zip --prefix=Tone-Art-Studio-0.1.0/ \
             -o "$out/ToneArtStudio-3-Source-Code.zip" HEAD
 
-          # 4 - the compiled browser build.
           mkdir -p "$ws/build/4"
           cp -r "$ws/dist" "$ws/build/4/ToneArtStudio-Web"
           rm -rf "$ws/build/4/ToneArtStudio-Web/download"
-          cat > "$ws/build/4/ToneArtStudio-Web/README.txt" <<'TXT'
-          TONE ART STUDIO 0.1.0 - WEB BUILD
-          =================================
-
-          This folder is a static site. Serve it over HTTP from this directory
-          (not file://, the app needs a secure origin for audio and storage):
-
-            npx serve .
-            python -m http.server 8080
-
-          Then open http://localhost:8080 (or 3000 for serve).
-          TXT
+          printf '%s\r\n' \
+            'TONE ART STUDIO 0.1.0 - WEB BUILD' \
+            '' \
+            'A static site. Serve it over HTTP from this directory, not file://:' \
+            '' \
+            '  npx serve .' \
+            '' \
+            'Then open the address it prints.' \
+            > "$ws/build/4/ToneArtStudio-Web/README.txt"
           (cd "$ws/build/4" && zip -qr "$out/ToneArtStudio-4-Web-Build.zip" .)
 
-          # All four, nested, for one download.
-          (cd "$out" && zip -q -0 ToneArtStudio-ALL.zip \
-            ToneArtStudio-1-App-Installer.zip \
-            ToneArtStudio-2-Desktop-and-Remote-Kit.zip \
-            ToneArtStudio-3-Source-Code.zip \
-            ToneArtStudio-4-Web-Build.zip)
+          (cd "$out" && zip -q -0 ToneArtStudio-ALL.zip ToneArtStudio-1-App-Installer.zip ToneArtStudio-2-Desktop-and-Remote-Kit.zip ToneArtStudio-3-Source-Code.zip ToneArtStudio-4-Web-Build.zip)
+          (cd "$out" && sha256sum *.zip "$exe" > SHA256.txt && cat SHA256.txt && ls -l)
 
-          (cd "$out" && sha256sum *.zip "$exe" > SHA256.txt && cat SHA256.txt)
-          ls -l "$out"
-
-      - name: Attach them to the release
+      - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh release upload v0.1.0 build/out/*.zip build/out/SHA256.txt --clobber
-          gh release view v0.1.0 --json assets \
-            --jq '.assets[] | "\(.name)  \(.size) bytes"'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tone-art-studio-downloads
-          path: build/out/
-          if-no-files-found: error
+          gh release view v0.1.0 --json assets --jq '.assets[] | "\(.name)  \(.size)"'
