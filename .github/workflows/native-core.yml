@@ -1,0 +1,25 @@
+name: native-core
+
+# The JUCE-free part of the native engine: per-track insert chains, gain, pan,
+# mute/solo and the master chain. It compiles and runs anywhere, so every change
+# to native/Core is checked here before the Windows host is built.
+
+on:
+  push:
+    paths:
+      - "native/Core/**"
+      - ".github/workflows/native-core.yml"
+  pull_request:
+    paths:
+      - "native/Core/**"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the mix-graph tests
+        run: native/Core/build-tests.sh

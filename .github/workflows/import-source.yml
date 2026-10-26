@@ -60,10 +60,11 @@ jobs:
             exit 1
           fi
           echo "unpacking $top"
+          # Workflow files are deliberately left out: a GITHUB_TOKEN push may not
+          # add or change anything under .github/workflows, so those come in
+          # through a separate commit made by the app integration instead.
+          rm -rf "$top/.github/workflows"
           tar -C "$top" -cf - . | tar -C "$GITHUB_WORKSPACE" -xf -
-          # The old workaround workflow only existed because the source was not
-          # in the repository; the imported tree carries its own CI.
-          rm -f "$GITHUB_WORKSPACE/.github/workflows/build-windows.yml"
           git status --short | head -n 40
           echo "files now present: $(git ls-files --others --exclude-standard | wc -l) new," \
                "$(git diff --name-only | wc -l) changed," \

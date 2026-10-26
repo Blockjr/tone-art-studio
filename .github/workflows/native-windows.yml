@@ -1,0 +1,97 @@
+name: native-windows
+
+# Builds the JUCE host (ASIO + WebView2 + VST3), the virtual ASIO driver and the
+# Inno Setup installer on a real Windows machine. This is the only place the C++
+# is compiled: the project itself is authored on Linux, where neither ASIO nor
+# WebView2 exists.
+#
+# installer/ci-build.ps1 is the entry point (it guarantees Inno Setup, then runs
+# installer/build-installer.ps1 - Visual Studio discovery, the WebView2 SDK, the
+# JUCE clone and the ASIO headers) so a local build and this workflow cannot
+# drift apart.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native/**"
+      - "installer/**"
+      - "assets/brand/**"
+      - "src/native/**"
+      - "src/ui/native.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/native-windows.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - "installer/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # MSBuild prints errors only, which keeps the log small enough to read whole.
+  HYBRID_QUIET_BUILD: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # One entry point for the whole chain, the same script a local run uses:
+      # web UI, JUCE host, virtual ASIO driver, Tone Art Gate VST3, Inno Setup.
+      # It prints the installer's SHA-256 and a 72-hour public download link.
+      - name: Build the host, the driver, the VST3 and the installer
+        shell: pwsh
+        run: ./installer/ci-build.ps1
+
+      - name: Show what was built
+        shell: pwsh
+        run: |
+          Get-ChildItem dist-installer | Select-Object Name, Length
+          Get-ChildItem -Recurse native/build/HybridStudio_artefacts/Release |
+            Select-Object FullName, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tone-art-studio-windows
+          path: native/build/HybridStudio_artefacts/Release/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tone-art-gate-vst3
+          path: native/build/ToneArtGate_artefacts/Release/VST3/Tone Art Gate.vst3
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tone-art-studio-setup
+          path: dist-installer/*.exe
+          if-no-files-found: error
+
+      # A release asset is a plain download; an artifact needs a signed-in
+      # GitHub session and is deleted after 90 days.
+      - name: Publish the installer
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          $setup = Get-ChildItem dist-installer/*.exe | Select-Object -First 1
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "Tone Art Studio $version" --notes "Windows build of Tone Art Studio $version: the desktop host (ASIO, VST3, WebView2), the bundled Tone Art Gate plugin and the virtual ASIO driver."
+          }
+          gh release upload $tag $setup.FullName --clobber
