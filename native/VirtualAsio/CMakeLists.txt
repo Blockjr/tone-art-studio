@@ -10,10 +10,24 @@
 #   build-asio/Release/ToneArtVirtualAsioTest.exe
 
 # Standalone, PROJECT_VERSION comes from nowhere and the policy version has not
-# been set above either. Inside the full build the parent has done both.
+# been set above either. Inside the full build the parent has done both. Read the
+# version from package.json here too, so a standalone configure cannot stamp the
+# driver with a version of its own (it used to say 0.1.0).
 if(NOT PROJECT_VERSION)
   cmake_minimum_required(VERSION 3.25)
-  project(HybridVirtualAsioStandalone VERSION 0.1.0 LANGUAGES CXX)
+
+  set(_hybrid_version "0.0.0")
+  set(_hybrid_package_json "${CMAKE_CURRENT_SOURCE_DIR}/../../package.json")
+  if(EXISTS "${_hybrid_package_json}")
+    file(READ "${_hybrid_package_json}" _hybrid_package_contents)
+    string(REGEX MATCH "\"version\"[ ]*:[ ]*\"([0-9]+\\.[0-9]+\\.[0-9]+)\""
+           _hybrid_version_match "${_hybrid_package_contents}")
+    if(CMAKE_MATCH_1)
+      set(_hybrid_version "${CMAKE_MATCH_1}")
+    endif()
+  endif()
+
+  project(HybridVirtualAsioStandalone VERSION ${_hybrid_version} LANGUAGES CXX)
 endif()
 
 # Everything here is C++20: the shared block is inline constexpr and std::atomic,

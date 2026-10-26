@@ -5,8 +5,14 @@ native/build/
 artifacts/
 .DS_Store
 *.log
+.logs/
 native/webview2/
 native/third_party/
+
+# Scratch: bundles and notes assembled by hand during a session. They are
+# copies of published release assets, so tracking them would create the stale
+# fixed version this file exists to prevent.
+deliverables/
 
 # Chat download bundle, not part of the source tree
 Tone-Art-Studio-*-source.zip

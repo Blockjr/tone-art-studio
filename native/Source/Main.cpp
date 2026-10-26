@@ -5,7 +5,11 @@ class HybridStudioApplication final : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "Tone Art Studio"; }
-    const juce::String getApplicationVersion() override { return "0.1.0"; }
+
+    // The version comes from package.json through CMake (see native/CMakeLists.txt
+    // and the JUCE_APPLICATION_VERSION_STRING define): a literal here is how this
+    // host went on reporting 0.1.0 long after the app shipped 0.5.x.
+    const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override { return false; }
 
     void initialise (const juce::String&) override

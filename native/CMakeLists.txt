@@ -1,7 +1,23 @@
 cmake_minimum_required(VERSION 3.25)
 
+# The product version has exactly one source: package.json. The installer, the
+# web UI and this host all read it from there, so the engine cannot keep
+# reporting a version the rest of the product moved past - it used to be a
+# literal 0.1.0 while the app shipped 0.5.1.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../package.json" HYBRID_PACKAGE_JSON)
+string(REGEX MATCH "\"version\"[ ]*:[ ]*\"([0-9]+\\.[0-9]+\\.[0-9]+)\""
+       _hybrid_version_match "${HYBRID_PACKAGE_JSON}")
+
+if(NOT CMAKE_MATCH_1)
+  message(FATAL_ERROR
+    "Could not read \"version\" from ${CMAKE_CURRENT_SOURCE_DIR}/../package.json. "
+    "That file is the single source of the product version.")
+endif()
+
+set(HYBRID_VERSION "${CMAKE_MATCH_1}")
+
 # JUCE 9 refuses to configure without a C compiler (its bundled libraries use it).
-project(HybridStudio VERSION 0.1.0 LANGUAGES C CXX)
+project(HybridStudio VERSION ${HYBRID_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -113,7 +129,7 @@ endif()
 # --------------------------------------------------------------- the plugin
 # Tone Art Gate is a real VST3, built from the same project: the desktop host
 # can load it from the standard VST3 folder like any third-party plugin, and so
-# can any other DAW. Installer copies it to {commoncf}\VST3.
+# can any other DAW. Installer copies it to {commoncf}\\VST3.
 
 if(HYBRID_BUILD_GATE_VST3)
   juce_add_plugin(ToneArtGate

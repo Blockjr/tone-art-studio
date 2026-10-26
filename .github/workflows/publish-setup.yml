@@ -13,9 +13,10 @@ name: publish-setup
 # artifacts. Re-running this job reuses that build instead of paying for another
 # nine-minute MSVC pass.
 #
-# The repository copy is skipped for anything over GitHub's 100 MB file limit:
-# the installed app carries a browser engine, so its setup program has been
-# around 116 MB since 0.2.0 and can only be published as a release asset.
+# Nothing here is copied into the repository. The built files are release assets
+# only: a copy committed to the tree is a fixed version that goes stale and gets
+# handed to someone as "the app" long after it stopped being current, which is
+# what .gitignore says about installers too.
 
 on:
   workflow_dispatch:
@@ -94,29 +95,3 @@ jobs:
           gh release upload "$tag" "${files[@]}" --clobber
           gh release view "$tag" --json assets \
             --jq '.assets[] | "\(.name)  \(.size) bytes  \(.digest)"'
-
-      - name: Keep a copy of the small files in the repository
-        run: |
-          set -euo pipefail
-          version=$(node -p "require('./package.json').version")
-          mkdir -p installer-dist
-          copied=0
-          while IFS= read -r -d '' file; do
-            size=$(stat -c%s "$file")
-            if [ "$size" -gt 95000000 ]; then
-              echo "::notice::$(basename "$file") is $size bytes, over GitHub's 100 MB file limit; the release asset is the download"
-              continue
-            fi
-            cp "$file" "installer-dist/$(basename "$file")"
-            copied=$((copied + 1))
-          done < <(find /tmp/host -type f -print0 2>/dev/null)
-
-          git config user.name 'Tone Art Studio build'
-          git config user.email 'build@users.noreply.github.com'
-          git add -A installer-dist
-          if git diff --cached --quiet; then
-            echo '::notice::the repository copies are already the current build'
-          else
-            git commit -m "Refresh the built Windows engine and driver ($version, $copied files)"
-            git push
-          fi
