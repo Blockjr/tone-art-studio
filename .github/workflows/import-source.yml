@@ -1,0 +1,88 @@
+name: import-source
+
+# One-shot helper: this repository was created as a release shell (README plus
+# the CI that built the installer) while the real source tree lived elsewhere.
+# This workflow copies that tree in from a source archive and commits it, so the
+# code lives in the repository itself instead of behind a temporary file link.
+#
+# Dispatch it with the archive URL. Run it once; it is idempotent in the sense
+# that running it again with the same archive produces no changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Source archive (.zip whose top level is one folder)
+        required: true
+        default: ''
+      expected_sha256:
+        description: Optional SHA-256 of the archive; the run fails if it does not match
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and verify the archive
+        env:
+          URL: ${{ inputs.url }}
+          EXPECTED: ${{ inputs.expected_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$URL" ]; then
+            echo '::error::pass the source archive URL as the url input'
+            exit 1
+          fi
+          curl -fsSL --retry 3 --retry-delay 5 "$URL" -o /tmp/src.zip
+          actual=$(sha256sum /tmp/src.zip | cut -d' ' -f1)
+          echo "archive sha256: $actual"
+          if [ -n "$EXPECTED" ] && [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::archive SHA-256 $actual does not match $EXPECTED"
+            exit 1
+          fi
+
+      - name: Unpack over the working tree
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/src && mkdir -p /tmp/src
+          unzip -q /tmp/src.zip -d /tmp/src
+          top=$(find /tmp/src -maxdepth 1 -mindepth 1 -type d | head -n 1)
+          if [ -z "$top" ]; then
+            echo "::error::archive has no top-level folder"
+            exit 1
+          fi
+          echo "unpacking $top"
+          tar -C "$top" -cf - . | tar -C "$GITHUB_WORKSPACE" -xf -
+          # The old workaround workflow only existed because the source was not
+          # in the repository; the imported tree carries its own CI.
+          rm -f "$GITHUB_WORKSPACE/.github/workflows/build-windows.yml"
+          git status --short | head -n 40
+          echo "files now present: $(git ls-files --others --exclude-standard | wc -l) new," \
+               "$(git diff --name-only | wc -l) changed," \
+               "$(git diff --name-only --diff-filter=D | wc -l) deleted"
+
+      - name: Commit the source tree
+        run: |
+          set -euo pipefail
+          git config user.name 'Tone Art Studio import'
+          git config user.email 'import@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo '::notice::nothing to commit - the tree already matches the archive'
+            exit 0
+          fi
+          git commit -m 'Import the Tone Art Studio source tree
+
+          The web app, the JUCE desktop host, the Virtual ASIO driver, the
+          Tone Art Gate VST3, the installer scripts and the tests, plus the
+          documentation that describes them. Built from the verified 0.1.0
+          tree that produced the published setup program.'
+          git push origin HEAD:main
