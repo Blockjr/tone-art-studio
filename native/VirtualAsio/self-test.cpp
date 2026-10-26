@@ -450,10 +450,12 @@ void auditQueries (IASIO* driver)
 
     checkLong (driver->getDriverVersion(), (2L << 16) | 3L, "the driver reports ASIO 2.3");
 
-    char error[64] {};
+    // ASIODriverInfo carries 124 bytes for the error message, so that is what a
+    // host hands over, and the whole message has to survive it.
+    char error[124] {};
     driver->getErrorMessage (error);
     check (std::strstr (error, "Tone Art Studio") != nullptr,
-           "the error message tells the user to start the studio");
+           "the error message survives intact and names the studio to start");
 
     long inputs = -1;
     long outputs = -1;

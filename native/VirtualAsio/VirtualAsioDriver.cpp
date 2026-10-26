@@ -47,14 +47,27 @@ unsigned long long systemTimeInNanoseconds()
     return (unsigned long long) std::chrono::duration_cast<std::chrono::nanoseconds> (now).count();
 }
 
+/** Driver, channel and clock names are 32 bytes in ASIO, but the error message
+    is not: ASIODriverInfo carries 124 for it, and a host shows whatever lands
+    there verbatim when the device will not start. Clipping that to 31 characters
+    cut the sentence off at "start To". */
+constexpr size_t kNameBytes = 32;
+constexpr size_t kErrorMessageBytes = 124;
+
 template <typename T>
-void copyName (char* destination, const T* text)
+void copyField (char* destination, const T* text, size_t size)
 {
     if (destination == nullptr)
         return;
 
-    std::memset (destination, 0, 32);
-    std::strncpy (destination, text, 31);
+    std::memset (destination, 0, size);
+    std::strncpy (destination, text, size - 1);
+}
+
+template <typename T>
+void copyName (char* destination, const T* text)
+{
+    copyField (destination, text, kNameBytes);
 }
 } // namespace
 
@@ -123,7 +136,8 @@ long HybridVirtualDriver::getDriverVersion()
 
 void HybridVirtualDriver::getErrorMessage (char* string)
 {
-    copyName (string, "Tone Art Virtual ASIO: start Tone Art Studio to route audio");
+    copyField (string, "Tone Art Virtual ASIO: start Tone Art Studio to route audio",
+               kErrorMessageBytes);
 }
 
 ASIOError HybridVirtualDriver::start()
