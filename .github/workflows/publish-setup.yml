@@ -1,14 +1,18 @@
 name: publish-setup
 
 # Takes the setup program from the newest native-windows run that uploaded the
-# `tone-art-studio-setup` artifact and publishes it: as the release asset, and
-# as a copy inside the repository.
+# `tone-art-studio-setup` artifact and publishes it as the release asset for the
+# version in package.json.
 #
-# It exists because native-windows failed on its very last step only:
-# `gh release upload --clobber` reported an error while the build, the driver,
-# the VST3 and the installer had all already been produced and uploaded as
+# It exists because native-windows fails on its very last step only:
+# `gh release upload --clobber` reports an error while the build, the driver,
+# the VST3 and the installer have all already been produced and uploaded as
 # artifacts. Re-running this job reuses that build instead of paying for another
 # nine-minute MSVC pass.
+#
+# The repository copy is skipped for anything over GitHub's 100 MB file limit:
+# the installed app carries a browser engine, so the setup program has been
+# around 116 MB since 0.2.0 and can only be published as a release asset.
 
 on:
   workflow_dispatch:
@@ -59,18 +63,28 @@ jobs:
           fi
           echo "setup program: $exe ($(stat -c%s "$exe") bytes)"
           sha256sum "$exe"
-          gh release view v0.1.0 > /dev/null 2>&1 \
-            || gh release create v0.1.0 --title 'Tone Art Studio 0.1.0' --notes 'Windows build of Tone Art Studio 0.1.0.'
-          gh release upload v0.1.0 "$exe" --clobber
-          gh release view v0.1.0 --json assets \
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          echo "publishing into $tag"
+          gh release view "$tag" > /dev/null 2>&1 \
+            || gh release create "$tag" --title "Tone Art Studio $version" \
+                 --notes "Windows build of Tone Art Studio $version: the desktop app, the bundled Tone Art Gate VST3 and the virtual ASIO driver."
+          gh release upload "$tag" "$exe" --clobber
+          gh release view "$tag" --json assets \
             --jq '.assets[] | "\(.name)  \(.size) bytes  \(.digest)"'
 
-      - name: Keep a copy in the repository
+      - name: Keep a copy in the repository when it fits
         run: |
           set -euo pipefail
           exe=$(find /tmp/out -type f -name '*.exe' -print -quit)
+          size=$(stat -c%s "$exe")
+          version=$(node -p "require('./package.json').version")
+          if [ "$size" -gt 95000000 ]; then
+            echo "::notice::the setup program is $size bytes, over GitHub's 100 MB file limit; the release asset is the download"
+            exit 0
+          fi
           mkdir -p installer-dist
-          cp "$exe" installer-dist/ToneArtStudioSetup-0.1.0.exe
+          cp "$exe" "installer-dist/ToneArtStudioSetup-$version.exe"
           git config user.name 'Tone Art Studio build'
           git config user.email 'build@users.noreply.github.com'
           git add -A installer-dist
