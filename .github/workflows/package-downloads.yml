@@ -118,7 +118,16 @@ jobs:
           (cd "$ws/build/4" && zip -qr "$out/ToneArtStudio-4-Web-Build.zip" .)
 
           (cd "$out" && zip -q -0 ToneArtStudio-ALL.zip ToneArtStudio-1-App-Installer.zip ToneArtStudio-2-Desktop-and-Remote-Kit.zip ToneArtStudio-3-Source-Code.zip ToneArtStudio-4-Web-Build.zip)
-          (cd "$out" && sha256sum *.zip "$exe" > SHA256.txt && cat SHA256.txt && ls -l)
+
+          # Bare file names only. The first version of this line wrote the
+          # installer as an absolute path, which is not something anyone can
+          # check from the folder they downloaded into: `sha256sum -c` answers
+          # "no such file" instead of a verdict.
+          {
+            (cd "$out" && sha256sum *.zip)
+            (cd "$(dirname "$exe")" && sha256sum "$(basename "$exe")")
+          } > "$out/SHA256.txt"
+          cat "$out/SHA256.txt" && ls -l "$out"
 
       - name: Attach to the release
         env:
