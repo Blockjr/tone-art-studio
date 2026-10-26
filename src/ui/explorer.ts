@@ -42,6 +42,8 @@ export interface FileExplorerOptions {
   onInsertFile: (file: File) => void;
   onAuditionAsset: (assetId: string) => void;
   onInsertAsset: (assetId: string) => void;
+  /** brings every audio file in the open folder into the session at once */
+  onImportAll?: (files: File[]) => void | Promise<void>;
   assets: () => ExplorerAsset[];
   notify: (message: string) => void;
 }
@@ -152,6 +154,7 @@ export class FileExplorer {
   private source: Source | null = null;
   private path = '';
   private rows: Row[] = [];
+  private importAllButton!: HTMLButtonElement;
   private query = '';
   private audioOnly = true;
   private folders: FileSystemDirectoryHandle[] = [];
@@ -178,7 +181,14 @@ export class FileExplorer {
     refresh.title = 'Refresh this folder';
     refresh.addEventListener('click', () => void this.render());
 
-    bar.append(this.openButton, this.upButton, refresh);
+    // Bulk import: an opened sample pack is dozens of files, and placing them
+    // one at a time is the wrong kind of work. This takes the whole folder.
+    this.importAllButton = el('button', 'explorer-btn explorer-btn-import', 'Import all');
+    this.importAllButton.title = 'Import every audio file in this folder into the session, laid end to end';
+    this.importAllButton.disabled = true;
+    this.importAllButton.addEventListener('click', () => void this.importAll());
+
+    bar.append(this.openButton, this.upButton, refresh, this.importAllButton);
 
     this.crumbs = el('div', 'explorer-crumbs');
 
@@ -464,7 +474,10 @@ export class FileExplorer {
 
   private renderRows(): void {
     this.list.replaceChildren();
-    if (!this.source) return;
+    if (!this.source) {
+      this.importAllButton.disabled = true;
+      return;
+    }
 
     const visible = sortEntries(
       filterEntries(this.rows, this.query).filter(
@@ -483,7 +496,38 @@ export class FileExplorer {
     }
 
     this.status.hidden = true;
+    this.importAllButton.disabled = !visible.some((row) => row.kind === 'audio');
     for (const row of visible) this.list.appendChild(this.rowElement(row));
+  }
+
+  /** Every audio file in the listed folder, read into File objects. */
+  private async audioFilesHere(): Promise<File[]> {
+    const files: File[] = [];
+    for (const row of this.rows) {
+      if (row.kind !== 'audio') continue;
+      if (row.file) {
+        files.push(row.file);
+        continue;
+      }
+      if (row.handle) {
+        try {
+          files.push(await row.handle.getFile());
+        } catch {
+          // A file removed or made unreadable since the listing is skipped.
+        }
+      }
+    }
+    return files;
+  }
+
+  /** Imports the whole open folder in one action. */
+  private async importAll(): Promise<void> {
+    const files = await this.audioFilesHere();
+    if (files.length === 0) {
+      this.options.notify('No audio files in this folder to import');
+      return;
+    }
+    await this.options.onImportAll?.(files);
   }
 
   private renderCrumbs(): void {

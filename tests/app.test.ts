@@ -979,3 +979,30 @@ describe('startup health', () => {
     expect((banner as HTMLElement).hidden).toBe(true);
   });
 });
+
+/**
+ * The sample browser is where a user's own folders arrive, so the two actions
+ * that matter — opening a folder and importing all of it — have to be present
+ * and reachable in the Files tab.
+ */
+describe('sample browser and folder import', () => {
+  it('shows the folder controls in the Files tab', async () => {
+    (document.getElementById('browser-tab-files') as HTMLButtonElement).click();
+    await wait(60);
+
+    const open = document.querySelector('.explorer-btn-open');
+    const importAll = document.querySelector('.explorer-btn-import');
+    expect(open).not.toBeNull();
+    expect(importAll).not.toBeNull();
+    expect((importAll as HTMLButtonElement).textContent).toContain('Import all');
+    // Nothing is open yet, so there is nothing to import.
+    expect((importAll as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps the session audio pool and the preview reachable', async () => {
+    expect(document.querySelector('.explorer-pool')).not.toBeNull();
+    expect(document.getElementById('btn-preview')).not.toBeNull();
+    (document.getElementById('browser-tab-library') as HTMLButtonElement).click();
+    await wait(40);
+  });
+});

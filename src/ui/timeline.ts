@@ -2,6 +2,7 @@ import type { Engine } from '../audio/engine';
 import { prepareClipAudio } from '../audio/clipsource';
 import { resolveFades } from '../audio/fades';
 import { drawWaveform } from '../audio/waveform';
+import { canDropClipOn, trackIndexAtY } from '../core/dragdrop';
 import type { Store } from '../core/store';
 import {
   createMarker,
@@ -1195,8 +1196,25 @@ export class Timeline {
 
       if (this.drag.mode === 'move') {
         const next = Math.max(0, snapBeat(this.drag.origStart + deltaBeats, snap));
+
+        // Dragging up or down moves the clip to another track, the way every
+        // DAW handles it. Only a track of the same kind can take the clip: an
+        // audio clip has no instrument to play it on a MIDI lane, and a MIDI
+        // clip has no audio file to play on an audio one.
+        const rect = this.ctx.canvas.getBoundingClientRect();
+        const pointerY = event.clientY - rect.top;
+        const tracks = this.store.project.tracks;
+        const index = trackIndexAtY(pointerY, TRACK_H, tracks.length);
+        const target = index >= 0 ? tracks[index] : undefined;
+
         this.store.touch('params', () => {
           clip.start = next;
+          if (target && target.id !== clip.trackId && canDropClipOn(target.kind, clip.kind)) {
+            clip.trackId = target.id;
+            // The clip takes the colour of the track it now lives on, so the
+            // arrangement keeps reading as one colour per track.
+            clip.color = target.color;
+          }
         });
       } else if (this.drag.mode === 'trim-right') {
         const next = Math.max(snap || 0.25, snapBeat(this.drag.origLength + deltaBeats, snap));

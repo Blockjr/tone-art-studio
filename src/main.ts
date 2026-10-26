@@ -1659,6 +1659,7 @@ fileExplorer = new FileExplorer({
   onInsertFile: (file) => {
     void insertFromExplorer(file);
   },
+  onImportAll: (files) => importAudioFolder(files),
   onAuditionAsset: (assetId) => {
     const asset = store.assetById(assetId);
     if (!asset) return;
@@ -1674,6 +1675,42 @@ fileExplorer = new FileExplorer({
   notify: toast,
 });
 fileExplorer.mount($('browser-files'));
+
+/**
+ * Imports every audio file from a folder in one pass, laid end to end from the
+ * playhead. Opening a sample pack and placing fifty files one at a time is the
+ * kind of chore that stops people using their own samples at all.
+ */
+async function importAudioFolder(files: File[]): Promise<void> {
+  const audio = files.filter((file) => isAudioName(file.name));
+  if (audio.length === 0) {
+    toast('That folder has no audio files');
+    return;
+  }
+
+  let beat = Math.max(0, engine.positionBeat);
+  let imported = 0;
+  let failed = 0;
+
+  for (const file of audio) {
+    try {
+      const clip = await importAudioFile(file, { beat });
+      // The next file starts where this one ends, with a small gap so two
+      // clips never share a boundary exactly.
+      beat = clip.start + clip.length + 0.25;
+      imported++;
+    } catch {
+      failed++;
+    }
+  }
+
+  fileExplorer?.refresh();
+  toast(
+    failed === 0
+      ? `Imported ${imported} file${imported === 1 ? '' : 's'} from the folder`
+      : `Imported ${imported}, could not decode ${failed}`,
+  );
+}
 
 async function insertFromExplorer(file: File): Promise<void> {
   try {
