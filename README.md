@@ -582,6 +582,12 @@ The mixer core (`native/Core`) is JUCE-free and tested on any machine with
 `native/Source/VstInsert.cpp` and `VstScanner.cpp`. `native/MIXER.md` describes
 the protocol and the remaining stages.
 
+The virtual ASIO driver's shared-memory ring protocol is tested the same way,
+with `native/tests/build-tests.sh` — sample-exact round trips, wraparound,
+overflow, underrun, reset and a randomised run against a reference FIFO. Both
+scripts run on every push via `.github/workflows/native-core.yml`, so the audio
+path between the driver and the app is checked before the Windows build starts.
+
 Requirements: Windows 10/11, Visual Studio 2022 (Desktop C++), CMake 3.25+,
 Node.js 20+, and optionally Inno Setup 6.3+ for the installer.
 

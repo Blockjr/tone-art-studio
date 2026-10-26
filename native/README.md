@@ -21,6 +21,9 @@ native/
     DriverModule.cpp      COM class factory + registry registration
     install.ps1           elevated register/unregister
     README.md             driver details and limits
+  tests/                  ring-protocol tests (no JUCE, no Windows, no audio device)
+    asio-ring-tests.cpp   round trips, wraparound, overflow, underrun, reset
+    build-tests.sh        builds and runs them, used by native-core.yml
   Plugins/ToneArtGate/    the bundled VST3 (separate target, builds on any OS)
     PluginProcessor.*     tempo-synced gate DSP + parameters
     PluginEditor.*        faceplate
@@ -94,6 +97,13 @@ Open **Studio Rig** in the top bar. Inside the desktop host it shows:
 
 In a plain browser the same panel explains that ASIO, the virtual driver and
 VST3 need the desktop build; the web app keeps using Web Audio.
+
+## Tests
+
+`native/Core/build-tests.sh` checks the mixer and `native/tests/build-tests.sh`
+checks the virtual ASIO driver's shared-memory ring protocol. Neither needs
+Windows, JUCE or an audio device, and `.github/workflows/native-core.yml` runs
+both on every change to the mixer or to `HybridAsioShared.h`.
 
 ## Bridge protocol
 

@@ -77,14 +77,25 @@ that cannot register fails the build instead of reaching a release.
 - Float32 stereo only; no MIDI, no clock sync, no per-channel routing matrix.
 - ~2 blocks of latency in each direction, plus the ring depth.
 - Sample rates 44.1–192 kHz; the rate is fixed while a host is running.
-- **Status: built and registered in CI, audio not yet exercised.** Every Windows
-  build compiles the DLL, registers it in an elevated session, checks the keys a
-  host reads, creates the COM object and unregisters again, and
-  `native-windows.yml` fails outright if `HybridVirtualAsio.dll` is missing. It
-  ships in `ToneArtStudioHostSetup-<version>.exe` and in
-  `ToneArtVirtualAsio-<version>.zip`. What no headless runner can prove is audio
-  moving through the ring buffers to a real host - it has no audio hardware and
-  no second ASIO application - so the first session with your hosts is that test.
-  Registration needs admin.
+- **Status: built, registered and ring-tested in CI; not yet exercised against a
+  real ASIO host.** Every Windows build compiles the DLL, registers it in an
+  elevated session, checks the keys a host reads, creates the COM object and
+  unregisters again, and `native-windows.yml` fails outright if
+  `HybridVirtualAsio.dll` is missing. It ships in
+  `ToneArtStudioHostSetup-<version>.exe` and in
+  `ToneArtVirtualAsio-<version>.zip`. Registration needs admin.
+
+  The ring protocol itself is covered on every push by `native/tests/build-tests.sh`
+  (`native-core.yml`), which needs no Windows and no audio device: sample-exact
+  round trips, wraparound across the index mask, partial writes when the ring is
+  full, silence-and-a-counted-underrun when it runs dry, reset discarding a
+  backlog without shifting the signal, the two rings staying independent, and a
+  4 000-step randomised run cross-checked against an independent reference FIFO.
+  It pins the protocol version, magic value and mask, so a change to the shared
+  header cannot quietly break DLLs already installed in other people's hosts.
+
+  What no headless runner can prove is audio crossing a process boundary into a
+  real ASIO application: it has no audio hardware and no second host. Your first
+  session is that test.
 - Browsers cannot use ASIO at all. To capture browser audio, bridge it with
   VoiceMeeter or ASIO Link, or record the interface's loopback in Tone Art Studio.
