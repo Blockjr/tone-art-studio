@@ -4,6 +4,9 @@
   "version": "0.5.1",
   "type": "module",
   "main": "desktop/main.cjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "description": "Tone Art Studio - a browser DAW with arrangement, session, mixer, devices and mastering",
   "author": "Tone Art Studio",
   "scripts": {

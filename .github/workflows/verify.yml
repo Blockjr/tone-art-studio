@@ -31,7 +31,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 24, matching what the app is developed on and package.json's
+          # engines. The toolchain requires >=22.12: vitest 5, jsdom 30 and
+          # electron 45 all refuse an older runtime, and on Node 20 `npm ci`
+          # reports EBADENGINE for seventeen packages and the remote bridge test
+          # fails for reasons that have nothing to do with the change.
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
