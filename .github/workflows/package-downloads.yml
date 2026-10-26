@@ -13,7 +13,7 @@ permissions:
 
 env:
   EXE: ToneArtStudioSetup-0.1.0.exe
-  EXE_SHA: 31f74513bbaa9299c088766a6c5da8785ab06fcbea09fc43ae7737e791276c38
+  EXE_SHA: 0cf9c6d81838bc4180efd6db393c1116a44bd98b2d6cf406d3477ae68cfde3ce
 
 jobs:
   package:
