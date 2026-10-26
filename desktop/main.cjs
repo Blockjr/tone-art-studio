@@ -28,37 +28,111 @@ const REMOTE_PORT = 8787;
 let uiServer = null;
 let mainWindow = null;
 let remoteBridgeStarted = false;
-/** Wings opened with "Open panel in a window", keyed by panel name. */
+let remoteBridge = null;
+let quitting = false;
+/** Console windows opened from the studio, keyed by console name. */
 const panelWindows = new Map();
+
+/**
+ * Every console that can have a window of its own.
+ *
+ * The key is the id the interface reads from `?panel=<id>` (src/ui/consoles.ts
+ * is the other end of this list — a console added there is added here). The
+ * width and height are what its window opens at the first time; after that the
+ * size and position the user chose are remembered and reused.
+ */
+const PANELS = {
+  mixer: { title: 'Mixer', width: 1180, height: 580 },
+  notes: { title: 'Notes', width: 1080, height: 700 },
+  preview: { title: 'Audio Preview', width: 980, height: 440 },
+  takes: { title: 'Takes', width: 420, height: 840 },
+  midi: { title: 'MIDI', width: 420, height: 860 },
+  rig: { title: 'Studio Rig', width: 420, height: 900 },
+  browser: { title: 'Browser', width: 420, height: 840 },
+  rack: { title: 'Device Rack', width: 420, height: 840 },
+};
 
 /** Where window size and position are remembered between launches. */
 function windowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
 }
 
+/** A remembered rectangle is only worth reusing if it is still on a screen. */
+function onSomeDisplay(bounds) {
+  if (!bounds || !Number.isFinite(bounds.x) || !Number.isFinite(bounds.y)) return false;
+  if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return false;
+  return screen.getAllDisplays().some((display) => {
+    const area = display.workArea;
+    const overlapX = Math.min(area.x + area.width, bounds.x + bounds.width) - Math.max(area.x, bounds.x);
+    const overlapY = Math.min(area.y + area.height, bounds.y + bounds.height) - Math.max(area.y, bounds.y);
+    return overlapX >= 120 && overlapY >= 80;
+  });
+}
+
+/**
+ * The remembered rectangles for the studio window and every console window.
+ *
+ * Read once and kept in memory: several windows write to this file as they are
+ * moved, and a read-modify-write race between them would lose one of the two
+ * positions. It is deliberately resilient — a settings folder that cannot be
+ * written must never stop the app from opening or closing.
+ */
+let windowState = { main: null, panels: {} };
+
 function readWindowState() {
   try {
     const raw = fs.readFileSync(windowStatePath(), 'utf8');
     const state = JSON.parse(raw);
-    if (state && Number.isFinite(state.width) && Number.isFinite(state.height)) return state;
+    if (!state || typeof state !== 'object') return { main: null, panels: {} };
+    // Builds before console windows wrote the studio rectangle on its own.
+    if (Number.isFinite(state.width) && Number.isFinite(state.height)) {
+      return { main: state, panels: {} };
+    }
+    return {
+      main: onSomeDisplay(state.main) ? state.main : null,
+      panels: state.panels && typeof state.panels === 'object' ? state.panels : {},
+    };
   } catch {
     // First launch, or the file was cleared: the defaults are fine.
+    return { main: null, panels: {} };
   }
-  return null;
 }
 
-/**
- * Saves the window rectangle, but only while it is a normal window: a maximised
- * or full-screen window would otherwise be remembered as a screen-sized box.
- */
-function saveWindowState(window) {
-  if (!window || window.isDestroyed() || window.isMinimized() || window.isMaximized() || window.isFullScreen()) return;
+function writeWindowState() {
   try {
-    const bounds = window.getBounds();
-    fs.writeFileSync(windowStatePath(), JSON.stringify(bounds));
+    fs.writeFileSync(windowStatePath(), JSON.stringify(windowState));
   } catch {
     // A read-only settings folder must not stop the app from closing.
   }
+}
+
+/**
+ * Remembers a window rectangle, but only while it is a normal window: a
+ * maximised or full-screen window would otherwise be remembered as a
+ * screen-sized box, and a minimised one as the dot it is parked in.
+ */
+function rememberBounds(key, window, panel = null) {
+  if (!window || window.isDestroyed() || window.isMinimized() || window.isMaximized() || window.isFullScreen()) return;
+  const bounds = window.getBounds();
+  if (panel) windowState.panels[panel] = bounds;
+  else windowState.main = bounds;
+  writeWindowState();
+}
+
+/** Where a console opens when it has no remembered place: beside the studio. */
+function defaultPanelBounds(spec) {
+  const display = currentDisplay(mainWindow);
+  const area = display.workArea;
+  const width = Math.max(320, Math.min(spec.width, area.width));
+  const height = Math.max(260, Math.min(spec.height, area.height));
+
+  const studio = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : area;
+  // Stepped per open console, so three of them do not land exactly on top of
+  // each other in the same corner.
+  const step = panelWindows.size * 28;
+  const x = Math.min(Math.max(area.x + 12 + step, area.x), area.x + area.width - 200);
+  const y = Math.min(studio.y + 60 + step, area.y + area.height - 160);
+  return { x, y, width, height };
 }
 
 /** The display the main window is on, so a panel opens beside it. */
@@ -72,7 +146,10 @@ function reportFailure(title, detail) {
   const text = `${title}\n\n${detail}`;
   console.error(text);
 
-  if (app.isReady()) {
+  // Never interrupt a window that is closing. A dialog raised while the app is
+  // shutting down keeps it alive until someone dismisses it, which is the
+  // difference between "it closes" and "it will not close".
+  if (app.isReady() && !quitting) {
     dialog.showMessageBox({
       type: 'error',
       title: 'Tone Art Studio',
@@ -115,11 +192,30 @@ async function startRemoteBridge() {
   process.env.REMOTE_PORT = process.env.REMOTE_PORT || String(REMOTE_PORT);
 
   try {
-    await import(pathToFileURL(path.join(root, 'server', 'remote.mjs')).href);
+    remoteBridge = await import(pathToFileURL(path.join(root, 'server', 'remote.mjs')).href);
     console.log('tablet bridge listening on port ' + process.env.REMOTE_PORT);
   } catch (error) {
     console.error('tablet bridge did not start: ' + (error && error.message));
   }
+}
+
+/**
+ * Quits the app in one movement: consoles, then the studio, then the bridge.
+ *
+ * The bridge is started inside this process and holds a listening socket and a
+ * WebSocket per tablet. Left alone it keeps the process alive after the last
+ * window has gone, so closing the app appears to do nothing at all.
+ */
+function beginQuit() {
+  if (quitting) return;
+  quitting = true;
+  closeAllPanels();
+
+  if (remoteBridge && typeof remoteBridge.stopRemoteBridge === 'function') {
+    remoteBridge.stopRemoteBridge().catch(() => {});
+  }
+
+  app.quit();
 }
 
 function buildMenu() {
@@ -127,7 +223,11 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
-        { role: 'quit' },
+        {
+          label: 'Quit Tone Art Studio',
+          accelerator: 'CmdOrCtrl+Q',
+          click: () => beginQuit(),
+        },
       ],
     },
     {
@@ -167,6 +267,17 @@ function buildMenu() {
       ],
     },
     {
+      label: 'Consoles',
+      submenu: [
+        ...Object.entries(PANELS).map(([id, spec]) => ({
+          label: `Open ${spec.title}`,
+          click: () => void openPanelWindow(id),
+        })),
+        { type: 'separator' },
+        { label: 'Close all console windows', click: () => closeAllPanels() },
+      ],
+    },
+    {
       label: 'Window',
       submenu: [
         { role: 'minimize' },
@@ -174,43 +285,19 @@ function buildMenu() {
         { role: 'togglefullscreen' },
         { type: 'separator' },
         {
-          // Multi-monitor work: move this window to the next screen without
-          // dragging it through a display boundary.
-          label: 'Move to next display',
+          // Multi-monitor work: move the window you are working in — studio or
+          // console — to the next screen without dragging it across a boundary.
+          label: 'Move this window to the next display',
           click: () => {
-            if (!mainWindow) return;
-            const displays = screen.getAllDisplays();
-            if (displays.length < 2) {
-              dialog.showMessageBox({
-                type: 'info',
-                title: 'One display',
-                message: 'Only one display is connected',
-                detail: 'Connect a second monitor or tablet in extended mode, then try again.',
-                buttons: ['OK'],
-                noLink: true,
-              }).catch(() => {});
-              return;
-            }
-            const current = screen.getDisplayMatching(mainWindow.getBounds());
-            const index = displays.findIndex((display) => display.id === current.id);
-            const next = displays[(index + 1) % displays.length];
-            const bounds = mainWindow.getBounds();
-            mainWindow.setBounds({
-              x: next.workArea.x + Math.round((next.workArea.width - bounds.width) / 2),
-              y: next.workArea.y + Math.round((next.workArea.height - bounds.height) / 2),
-              width: bounds.width,
-              height: bounds.height,
-            });
+            const target = BrowserWindow.getFocusedWindow() || mainWindow;
+            if (!moveToNextDisplay(target)) explainsOneDisplay('One display');
           },
         },
-        {
-          label: 'MIDI panel in its own window',
-          click: () => void openPanelWindow('midi'),
-        },
-        {
-          label: 'Studio Rig in its own window',
-          click: () => void openPanelWindow('rig'),
-        },
+        { type: 'separator' },
+        ...Object.entries(PANELS).map(([id, spec]) => ({
+          label: `${spec.title} in its own window`,
+          click: () => void openPanelWindow(id),
+        })),
       ],
     },
     {
@@ -253,7 +340,8 @@ function buildMenu() {
 async function openPanelWindow(panel) {
   if (!uiServer) return false;
   const name = String(panel || '').replace(/[^a-z0-9-]/gi, '');
-  if (!name) return false;
+  const spec = PANELS[name];
+  if (!spec) return false;
 
   const existing = panelWindows.get(name);
   if (existing && !existing.isDestroyed()) {
@@ -262,20 +350,23 @@ async function openPanelWindow(panel) {
     return true;
   }
 
-  const display = currentDisplay(mainWindow);
-  const area = display.workArea;
+  // The place the user left it, when that screen is still connected; otherwise
+  // beside the studio window rather than where a monitor used to be.
+  const remembered = windowState.panels[name];
+  const bounds = onSomeDisplay(remembered) ? remembered : defaultPanelBounds(spec);
 
   const window = new BrowserWindow({
-    width: Math.min(460, Math.round(area.width * 0.4)),
-    height: Math.min(900, area.height),
+    ...bounds,
+    // Small enough for a phone-sized second screen, tall enough for a fader.
     minWidth: 320,
-    minHeight: 420,
-    x: Math.min(area.x + area.width - 480, area.x + area.width - 460),
-    y: Math.min(area.y + 40, area.y + area.height - 400),
+    minHeight: 260,
     resizable: true,
     maximizable: true,
+    fullscreenable: true,
     backgroundColor: '#08090c',
-    title: name === 'midi' ? 'Tone Art Studio — MIDI' : 'Tone Art Studio — Studio Rig',
+    title: `${spec.title} — Tone Art Studio`,
+    // The console is the whole window: it carries its own controls, so it needs
+    // no menu bar of its own. Alt still brings the app menu up.
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -288,12 +379,66 @@ async function openPanelWindow(panel) {
   });
 
   window.loadURL(`${uiServer.url}?panel=${name}`).catch((error) => {
-    reportFailure('The panel window could not open', String(error && error.message ? error.message : error));
+    reportFailure('The console window could not open', String(error && error.message ? error.message : error));
   });
 
+  // Each console keeps its own size and place, including on another screen.
+  window.on('resized', () => rememberBounds('panel', window, name));
+  window.on('moved', () => rememberBounds('panel', window, name));
+  window.on('close', () => rememberBounds('panel', window, name));
   window.on('closed', () => panelWindows.delete(name));
   panelWindows.set(name, window);
   return true;
+}
+
+/** Closes every console window; the studio window stays where it is. */
+function closeAllPanels() {
+  for (const [name, window] of [...panelWindows]) {
+    if (!window.isDestroyed()) {
+      rememberBounds('panel', window, name);
+      window.close();
+    }
+  }
+  panelWindows.clear();
+}
+
+/**
+ * Moves a window to the next display, and returns false when there is only one.
+ *
+ * Dragging a window across a display boundary is fiddly and easy to get wrong
+ * on mixed-DPI setups, so the common "put the mixer on the other monitor" is
+ * also a command. It acts on whichever window has focus, which is what makes it
+ * work for a console window as well as for the studio.
+ */
+function moveToNextDisplay(target) {
+  if (!target || target.isDestroyed()) return false;
+  const displays = screen.getAllDisplays();
+  if (displays.length < 2) return false;
+
+  const current = screen.getDisplayMatching(target.getBounds());
+  const index = displays.findIndex((display) => display.id === current.id);
+  const next = displays[(index + 1) % displays.length];
+  const bounds = target.getBounds();
+
+  target.setBounds({
+    x: next.workArea.x + Math.round((next.workArea.width - bounds.width) / 2),
+    y: next.workArea.y + Math.round((next.workArea.height - bounds.height) / 2),
+    width: bounds.width,
+    height: bounds.height,
+  });
+  target.focus();
+  return true;
+}
+
+function explainsOneDisplay(title) {
+  dialog.showMessageBox({
+    type: 'info',
+    title,
+    message: 'Only one display is connected',
+    detail: 'Connect a second monitor or a tablet in extended mode, then try again.',
+    buttons: ['OK'],
+    noLink: true,
+  }).catch(() => {});
 }
 
 async function createWindow() {
@@ -302,7 +447,8 @@ async function createWindow() {
   // Remembered bounds, but never smaller than the layout can use and never
   // off-screen: a saved position on a monitor that is no longer connected
   // would otherwise open the window where it cannot be seen.
-  const saved = readWindowState();
+  windowState = readWindowState();
+  const saved = windowState.main;
   const area = screen.getPrimaryDisplay().workArea;
   const width = saved ? Math.max(960, Math.min(saved.width, area.width)) : Math.min(1500, area.width);
   const height = saved ? Math.max(600, Math.min(saved.height, area.height)) : Math.min(950, area.height);
@@ -341,9 +487,16 @@ async function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
   // Keep the size the user chose for the next launch.
-  mainWindow.on('resized', () => saveWindowState(mainWindow));
-  mainWindow.on('moved', () => saveWindowState(mainWindow));
-  mainWindow.on('close', () => saveWindowState(mainWindow));
+  mainWindow.on('resized', () => rememberBounds('main', mainWindow));
+  mainWindow.on('moved', () => rememberBounds('main', mainWindow));
+
+  // Closing the studio closes the consoles with it. Without this the app stays
+  // alive with a mixer window still on screen and no studio to go back to,
+  // which reads as "the program will not close".
+  mainWindow.on('close', () => {
+    rememberBounds('main', mainWindow);
+    closeAllPanels();
+  });
 
   // A link to the outside world opens in the user's browser, never inside the
   // app, so the studio window cannot be navigated away from the interface.
@@ -419,7 +572,7 @@ if (!app.requestSingleInstanceLock()) {
     reportFailure('Tone Art Studio hit an unexpected problem', reason && reason.stack ? reason.stack : String(reason));
   });
 
-  // The interface asks for a panel window through the preload bridge.
+  // The interface asks for a console window through the preload bridge.
   ipcMain.handle('tas:open-panel', (_event, panel) => openPanelWindow(panel));
 
   app.whenReady().then(async () => {
@@ -441,10 +594,27 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('window-all-closed', () => {
-    app.quit();
+    beginQuit();
   });
 
   app.on('before-quit', () => {
+    quitting = true;
+    closeAllPanels();
     if (uiServer) uiServer.close().catch(() => {});
+    if (remoteBridge && typeof remoteBridge.stopRemoteBridge === 'function') {
+      remoteBridge.stopRemoteBridge().catch(() => {});
+    }
+  });
+
+  // Last resort, and the reason closing always finishes: if something holds the
+  // process open — a socket that will not close, a stuck driver — end it rather
+  // than leave a window that will not go away. Everything the app owns has been
+  // written to disk by this point, and the unref means a process that exits on
+  // its own is never delayed by this timer.
+  app.on('will-quit', () => {
+    setTimeout(() => {
+      console.error('Tone Art Studio did not exit in time; ending the process.');
+      app.exit(0);
+    }, 2000).unref?.();
   });
 }

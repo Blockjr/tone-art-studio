@@ -53,7 +53,7 @@ set "WINGET=winget install -e --silent --accept-package-agreements --accept-sour
 rem ---------------------------------------------------------------- Node.js
 where node >nul 2>&1
 if errorlevel 1 (
-    echo [1/4] Installing Node.js 20 LTS...
+    echo [1/4] Installing Node.js LTS...
     %WINGET% --id OpenJS.NodeJS.LTS
     set "PATH=%PATH%;%ProgramFiles%\nodejs"
 ) else (

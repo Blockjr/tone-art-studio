@@ -16,15 +16,20 @@ arrangement, mixing, MIDI, the tablet remote — is identical in both.
 
 ## Current downloads
 
-Every file is a release asset of the version in `package.json`; the repository is
-public, so no GitHub account or login is needed:
+Every file is a release asset of the newest release; the repository is public, so
+no GitHub account or login is needed. The asset names carry the version, so this
+table names the file by what it is and the release page is the only place that
+has to be current:
 
-| What | Where |
+| What | Release asset |
 | --- | --- |
-| Desktop app | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/ToneArtStudioSetup-0.5.1.exe> |
-| Native engine + virtual ASIO driver | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/ToneArtStudioHostSetup-0.5.1.exe> |
-| Driver on its own, for another DAW | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/ToneArtVirtualAsio-0.5.1.zip> |
-| Every hash | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/SHA256SUMS.txt> |
+| Desktop app | `ToneArtStudioSetup-<version>.exe` |
+| Native engine + virtual ASIO driver | `ToneArtStudioHostSetup-<version>.exe` |
+| Driver on its own, for another DAW | `ToneArtVirtualAsio-<version>.zip` |
+| Every hash | `SHA256SUMS.txt` |
+
+Take them from <https://github.com/Blockjr/tone-art-studio/releases/latest> and
+check each one against `SHA256SUMS.txt` before you run it.
 
 ## The virtual ASIO driver
 

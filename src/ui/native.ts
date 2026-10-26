@@ -1,3 +1,4 @@
+import type { InputCheck, InputDevice } from '../audio/recorder';
 import type { Preferences } from '../core/session';
 import {
   describeChain,
@@ -19,6 +20,23 @@ function formatTime(seconds: number): string {
   return `${minutes}:${String(rest).padStart(2, '0')}`;
 }
 import { el } from './controls';
+
+/**
+ * What the panel needs to offer the machine's own audio inputs and outputs.
+ *
+ * It is passed in rather than reached for, so the panel can be tested without a
+ * sound card and so the audio path stays in one place: the engine plays, the
+ * recorder captures, and this panel only chooses between the devices they use.
+ */
+export interface AudioIoHooks {
+  listInputs: () => Promise<InputDevice[]>;
+  listOutputs: () => Promise<InputDevice[]>;
+  /** the output the engine is playing through; '' is the system default */
+  currentOutput: () => string;
+  setOutput: (deviceId: string) => Promise<boolean>;
+  testOutput: () => Promise<boolean>;
+  checkInput: (deviceId: string) => Promise<InputCheck>;
+}
 
 export class NativePanel {
   private bridge: NativeBridge;
@@ -54,6 +72,13 @@ export class NativePanel {
   private songTrackSelect: HTMLSelectElement;
   private songMute: HTMLButtonElement;
   private songSolo: HTMLButtonElement;
+  private audioIo: AudioIoHooks | null;
+  private audioOutputSelect!: HTMLSelectElement;
+  private audioInputSelect!: HTMLSelectElement;
+  private audioOutputTest!: HTMLButtonElement;
+  private audioIoStatus!: HTMLElement;
+  private audioInputs: InputDevice[] = [];
+  private audioOutputs: InputDevice[] = [];
   private chainTarget: HTMLSelectElement;
   private chainTargetLabel: HTMLElement;
   private target = 'master';
@@ -64,12 +89,17 @@ export class NativePanel {
     preferences: Preferences,
     onPreferences: (preferences: Preferences) => void,
     onExportStems?: () => Promise<string>,
+    audioIo?: AudioIoHooks,
   ) {
     this.bridge = bridge;
     this.preferences = preferences;
     this.onPreferences = onPreferences;
     this.onExportStems = onExportStems;
+    this.audioIo = audioIo ?? null;
     this.root = el('aside', 'agent rig-panel');
+    // Its own id: three panels share the rig-panel class (rig, MIDI, takes),
+    // and a console window is asked for one of them by name.
+    this.root.id = 'rig-panel';
 
     const head = el('header', 'agent-head');
     const dot = el('span', 'agent-dot');
@@ -138,9 +168,48 @@ export class NativePanel {
     });
     scanPref.append(this.scanOnStart, el('span', '', 'Scan VST3 folders when the app starts'));
 
+    // Audio interface ---------------------------------------------------
+    //
+    // An external interface — a PreSonus AudioBox or any other — is an input and
+    // an output, and both are chosen here: the output is where the mix plays,
+    // the input is what recording uses. This is the Web Audio path, which is
+    // what the installed app uses unless the native engine is running, so it is
+    // not a fallback: it is the audio device section for most users.
+    this.audioOutputSelect = el('select', 'rig-select');
+    this.audioOutputSelect.title = 'The device the mix plays through';
+    this.audioOutputSelect.addEventListener('change', () => void this.chooseOutput());
+
+    this.audioOutputTest = el('button', 'tbtn tbtn-sm', 'Test tone');
+    this.audioOutputTest.title = 'Play half a second of tone through the chosen output';
+    this.audioOutputTest.addEventListener('click', () => void this.testOutput());
+
+    const outputRow = el('div', 'rig-row');
+    outputRow.append(this.audioOutputSelect, this.audioOutputTest);
+
+    this.audioInputSelect = el('select', 'rig-select');
+    this.audioInputSelect.title = 'The input recording and monitoring use';
+    this.audioInputSelect.addEventListener('change', () => this.chooseInput());
+
+    const checkInput = el('button', 'tbtn tbtn-sm', 'Check input');
+    checkInput.title = 'Listen to the chosen input for a moment and report its level';
+    checkInput.addEventListener('click', () => void this.checkInput());
+
+    const refreshAudio = el('button', 'tbtn tbtn-sm', 'Refresh');
+    refreshAudio.title = 'Look for interfaces plugged in since the panel opened';
+    refreshAudio.addEventListener('click', () => void this.loadAudioDevices());
+
+    const inputRow = el('div', 'rig-row');
+    inputRow.append(this.audioInputSelect, checkInput, refreshAudio);
+
+    this.audioIoStatus = el('div', 'agent-status', 'Looking for audio devices…');
+
     this.body.append(
       el('p', 'agent-intro',
         'Native audio and plugins. ASIO and VST3 only exist in the desktop build; the browser uses Web Audio and cannot load either.'),
+      el('div', 'section-title', 'Audio interface · this device'),
+      outputRow,
+      inputRow,
+      this.audioIoStatus,
       el('div', 'section-title', 'Audio device'),
       this.deviceStatus,
       this.deviceSelect,
@@ -235,6 +304,10 @@ export class NativePanel {
     document.body.appendChild(this.root);
     this.badge.textContent = this.bridge.available ? 'native' : 'browser';
 
+    // The audio device list is useful in both builds, so it is loaded before
+    // the native-only sections decide whether they can run.
+    if (this.audioIo) void this.loadAudioDevices();
+
     if (!this.bridge.available) {
       this.renderBrowserFallback();
       return;
@@ -268,6 +341,131 @@ export class NativePanel {
     }
     void host.openPanel('rig');
     this.close();
+  }
+
+  // ---------------------------------------------------------- audio interface
+
+  /** Lists what the machine offers and shows which one is in use. */
+  private async loadAudioDevices(): Promise<void> {
+    const hooks = this.audioIo;
+    if (!hooks) {
+      this.audioIoStatus.textContent = 'Audio device selection is not available in this build.';
+      return;
+    }
+
+    this.audioIoStatus.textContent = 'Looking for audio devices…';
+
+    try {
+      const [inputs, outputs] = await Promise.all([hooks.listInputs(), hooks.listOutputs()]);
+      this.audioInputs = inputs;
+      this.audioOutputs = outputs;
+      this.renderAudioDevices();
+    } catch (error) {
+      this.audioIoStatus.textContent = `Audio devices could not be listed: ${error instanceof Error ? error.message : error}`;
+    }
+  }
+
+  /**
+   * The two lists, each starting with the system default: a fresh install has no
+   * stored device, and a list that opens with nothing selected looks broken.
+   */
+  private renderAudioDevices(): void {
+    const fill = (select: HTMLSelectElement, devices: InputDevice[], chosen: string, fallback: string): void => {
+      select.replaceChildren();
+      const auto = el('option', '', fallback);
+      auto.value = '';
+      select.appendChild(auto);
+
+      for (const device of devices) {
+        const option = el('option', '', device.label);
+        option.value = device.id;
+        select.appendChild(option);
+      }
+
+      // A device that has been unplugged falls back to the default rather than
+      // leaving a selection that no longer exists.
+      select.value = devices.some((device) => device.id === chosen) ? chosen : '';
+    };
+
+    fill(this.audioOutputSelect, this.audioOutputs, this.audioIo?.currentOutput() ?? '', 'System default');
+    fill(this.audioInputSelect, this.audioInputs, this.preferences.recordDeviceId ?? '', 'System default');
+
+    const outputs = this.audioOutputs.length;
+    const inputs = this.audioInputs.length;
+    this.audioIoStatus.textContent =
+      `${outputs} output${outputs === 1 ? '' : 's'} · ${inputs} input${inputs === 1 ? '' : 's'} found` +
+      (inputs === 0 ? ' — plug an interface in, then press Refresh.' : '');
+  }
+
+  private async chooseOutput(): Promise<void> {
+    const hooks = this.audioIo;
+    if (!hooks) return;
+
+    const id = this.audioOutputSelect.value;
+    const label = this.audioOutputSelect.selectedOptions[0]?.textContent ?? 'the chosen device';
+
+    let changed = false;
+    try {
+      changed = await hooks.setOutput(id);
+    } catch (error) {
+      this.audioIoStatus.textContent = `The output could not be changed: ${error instanceof Error ? error.message : error}`;
+      return;
+    }
+
+    this.audioIoStatus.textContent = changed
+      ? `The mix now plays through ${label}. Test tone confirms it.`
+      : 'This build cannot choose an output device, so the system default is used.';
+  }
+
+  private chooseInput(): void {
+    const id = this.audioInputSelect.value;
+    const label = this.audioInputSelect.selectedOptions[0]?.textContent ?? 'the chosen input';
+
+    this.preferences = { ...this.preferences, recordDeviceId: id };
+    this.onPreferences(this.preferences);
+    this.audioIoStatus.textContent = `Recording will use ${label}. Check input confirms it hears something.`;
+  }
+
+  /**
+   * Listens to the chosen input for a moment and reports what it heard. A level
+   * that never leaves zero is the wrong input, a muted channel or a cable that
+   * is not in — better learned here than after a silent take.
+   */
+  private async checkInput(): Promise<void> {
+    const hooks = this.audioIo;
+    if (!hooks) return;
+
+    const id = this.audioInputSelect.value;
+    this.audioIoStatus.textContent = 'Listening to the input…';
+    const result = await hooks.checkInput(id);
+
+    if (!result.opened) {
+      this.audioIoStatus.textContent = `The input could not be opened: ${result.error ?? 'unknown reason'}.`;
+      return;
+    }
+
+    if (result.peak <= 0.0005) {
+      this.audioIoStatus.textContent = 'Silence. Check the cable, the interface gain, and that the channel is not muted.';
+      return;
+    }
+
+    const db = (20 * Math.log10(result.peak)).toFixed(1);
+    this.audioIoStatus.textContent = result.clipped
+      ? `Heard ${db} dBFS — that is clipping. Turn the interface gain down before recording.`
+      : `Heard ${db} dBFS. That input works.`;
+  }
+
+  private async testOutput(): Promise<void> {
+    const hooks = this.audioIo;
+    if (!hooks) return;
+
+    const label = this.audioOutputSelect.selectedOptions[0]?.textContent ?? 'the system default';
+    this.audioIoStatus.textContent = `Playing a tone through ${label}…`;
+    const played = await hooks.testOutput();
+
+    this.audioIoStatus.textContent = played
+      ? `A tone played through ${label}. If you did not hear it, that is not where your speakers are.`
+      : 'A test tone needs the audio engine, which could not start.';
   }
 
   private renderBrowserFallback(): void {

@@ -22,6 +22,7 @@ import type { DeviceState, DeviceType, InstrumentType, Track } from '../core/typ
 import { createKnob, el } from './controls';
 import { mountEchoPanel, mountReverbPanel } from './fxpanels';
 import { mountModulePanel } from './modulepanel';
+import { enableReorder } from './reorder';
 import { drawMicCurve, scheduleMicCurve } from './miccurve';
 
 interface CardOptions {
@@ -107,6 +108,7 @@ export class Rack {
   private target: string;
   private showTemplates = false;
   private chainStatus = '';
+  private stopReorder: (() => void) | null = null;
 
   constructor(
     store: Store,
@@ -123,6 +125,19 @@ export class Rack {
 
   mount(): void {
     this.render();
+
+    // Dragging a module by its slot number moves it in the chain. The listener
+    // is on the container, so it survives the re-render every move causes.
+    this.stopReorder = enableReorder({
+      container: this.container,
+      axis: 'y',
+      handle: (target) => {
+        if (target.closest('button, input, select')) return null;
+        return target.closest<HTMLElement>('.device-slot');
+      },
+      onDrop: (id, index) => this.dropDevice(id, index),
+    });
+
     this.unsubscribe = this.store.subscribe((reason) => {
       if (reason === 'structure' && !this.applyingAi) {
         // An external change (undo, another editor) means the applied marks no
@@ -142,6 +157,8 @@ export class Rack {
 
   dispose(): void {
     this.unsubscribe?.();
+    this.stopReorder?.();
+    this.stopReorder = null;
   }
 
   /** What the rack is pointing at, for the panel header. */
@@ -337,13 +354,34 @@ export class Rack {
   }
 
   private moveDevice(source: 'track' | 'master', index: number, delta: number, deviceId: string, track?: Track): void {
+    this.moveDeviceTo(source, index + delta, deviceId, track);
+  }
+
+  /**
+   * Puts one insert at a chosen position in its chain.
+   *
+   * Both the ↑ ↓ buttons and a drag end up here, so the two ways of moving a
+   * module cannot disagree; the drag adds the one thing the buttons cannot do,
+   * which is to take an insert from the bottom of a long chain straight to the
+   * top. The whole move is one undo step.
+   */
+  private moveDeviceTo(source: 'track' | 'master', index: number, deviceId: string, track?: Track): void {
     this.editChain(source, track, (list) => {
       const from = list.findIndex((entry) => entry.id === deviceId);
-      const to = Math.max(0, Math.min(list.length - 1, index + delta));
-      if (from === -1 || from === to) return;
+      if (from === -1) return;
+      const to = Math.max(0, Math.min(list.length - 1, index));
+      if (to === from) return;
       const [device] = list.splice(from, 1);
       list.splice(to, 0, device);
     });
+  }
+
+  /** A dropped insert: the same undoable move, with the position it was dropped on. */
+  private dropDevice(deviceId: string, index: number): void {
+    const master = this.target === 'master';
+    const track = this.store.project.tracks.find((entry) => entry.id === this.target) ?? this.store.selectedTrack;
+    this.moveDeviceTo(master ? 'master' : 'track', index, deviceId, track);
+    this.chainStatus = 'Insert moved — Ctrl+Z puts the chain back as it was.';
   }
 
   private editChain(
@@ -422,11 +460,22 @@ export class Rack {
     device: DeviceState,
     index: number,
   ): HTMLElement {
-    if (track && device.type === 'micemu') return this.buildMicCard(track, device);
-    if (track && device.type === 'aimix') return this.buildAiCard(track, device);
-    if (device.type === 'delay') return this.buildFxCard(source, track, device, 'delay', index);
-    if (device.type === 'reverb') return this.buildFxCard(source, track, device, 'reverb', index);
-    return this.buildModuleCard(source, track, device, index);
+    const card =
+      track && device.type === 'micemu'
+        ? this.buildMicCard(track, device)
+        : track && device.type === 'aimix'
+          ? this.buildAiCard(track, device)
+          : device.type === 'delay'
+            ? this.buildFxCard(source, track, device, 'delay', index)
+            : device.type === 'reverb'
+              ? this.buildFxCard(source, track, device, 'reverb', index)
+              : this.buildModuleCard(source, track, device, index);
+
+    // Every insert is draggable by its slot number; this is what a drop reports
+    // back. The track card and the instrument card deliberately have no id, so
+    // a drag that starts on them does nothing instead of moving a module.
+    card.dataset.dragId = device.id;
+    return card;
   }
 
   /** Every other insert gets the same animated faceplate family. */
@@ -587,7 +636,11 @@ export class Rack {
     const head = el('div', 'device-head');
     const power = el('span', 'dot');
     if (options.index !== undefined) {
-      head.append(power, el('span', 'device-slot', String(options.index + 1).padStart(2, '0')));
+      // The slot number doubles as the grip: it is the one part of the header
+      // that is not a knob, a title or a button, so it is where a drag starts.
+      const slot = el('span', 'device-slot', String(options.index + 1).padStart(2, '0'));
+      slot.title = 'Drag to move this module anywhere in the chain';
+      head.append(power, slot);
     } else {
       head.append(power);
     }

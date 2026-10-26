@@ -24,7 +24,7 @@ WHAT IS IN HERE
 
 
 INSTALL THESE ONCE
-  - Node.js 20+                      https://nodejs.org
+  - Node.js 22.12+                   https://nodejs.org
   - Visual Studio 2022 with the "Desktop development with C++" workload
   - CMake 3.25+                      https://cmake.org/download ("Add to PATH")
   - Inno Setup 6.3+                  https://jrsoftware.org/isdl.php

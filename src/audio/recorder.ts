@@ -133,6 +133,98 @@ export async function listInputDevices(): Promise<InputDevice[]> {
   }
 }
 
+/**
+ * The outputs the machine offers: an audio interface, the built-in speakers, a
+ * virtual loopback device. The engine plays its master through whichever one is
+ * chosen, so an interface is a real output choice and not a label in a list.
+ */
+export async function listOutputDevices(): Promise<InputDevice[]> {
+  const media = navigator.mediaDevices;
+  if (!media?.enumerateDevices) return [];
+
+  try {
+    const devices = await media.enumerateDevices();
+    return devices
+      .filter((device) => device.kind === 'audiooutput')
+      .map((device, index) => ({ id: device.deviceId, label: device.label || `Output ${index + 1}` }));
+  } catch {
+    return [];
+  }
+}
+
+export interface InputCheck {
+  /** loudest sample heard, 0..1 */
+  peak: number;
+  /** true when the input hit full scale, so the gain has to come down */
+  clipped: boolean;
+  /** true when the input opened at all */
+  opened: boolean;
+  /** what to tell the user when it did not */
+  error?: string;
+}
+
+/**
+ * Opens one input for a moment and reports the loudest sample it heard.
+ *
+ * This is how an interface is checked *before* a take: a level that never leaves
+ * zero is the wrong input, a muted channel or a cable that is not in, and it is
+ * better to find that out here than after recording three minutes of silence.
+ * It is a plain check with no side effects — nothing is recorded, nothing is
+ * written to the project — and it never throws, so the caller can put the answer
+ * straight on screen.
+ */
+export async function measureInputLevel(deviceId: string, milliseconds = 1500): Promise<InputCheck> {
+  const media = navigator.mediaDevices;
+  if (!media?.getUserMedia) {
+    return { peak: 0, clipped: false, opened: false, error: 'This browser cannot open an audio input.' };
+  }
+
+  const audio = {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    sampleRate: { ideal: 48000 },
+  } as MediaTrackConstraints;
+  if (deviceId) audio.deviceId = { exact: deviceId };
+
+  let stream: MediaStream | null = null;
+  let ctx: AudioContext | null = null;
+  try {
+    stream = await media.getUserMedia({ audio });
+    // A context of its own: the check must not disturb the transport's clock or
+    // add a node to the live graph.
+    ctx = new AudioContext();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+
+    const buffer = new Float32Array(analyser.fftSize);
+    let peak = 0;
+    const until = Date.now() + Math.max(200, milliseconds);
+
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      analyser.getFloatTimeDomainData(buffer);
+      for (let i = 0; i < buffer.length; i++) {
+        const level = Math.abs(buffer[i]);
+        if (level > peak) peak = level;
+      }
+    }
+
+    return { peak, clipped: peak >= FULL_SCALE, opened: true };
+  } catch (error) {
+    return {
+      peak: 0,
+      clipped: false,
+      opened: false,
+      error: error instanceof Error ? error.message : 'The input could not be opened.',
+    };
+  } finally {
+    for (const track of stream?.getTracks() ?? []) track.stop();
+    if (ctx) void ctx.close().catch(() => {});
+  }
+}
+
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 /** Joins the recorded blocks into one array per channel. */

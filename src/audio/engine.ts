@@ -18,6 +18,20 @@ const LOOKAHEAD_SECONDS = 0.12;
 const TICK_MS = 25;
 const START_DELAY = 0.06;
 
+/**
+ * Where transport commands go when this window is a console rather than the
+ * studio. A console window has no audio of its own — the sound card, the
+ * project's decoded audio and the instruments all live in the studio window —
+ * so its transport is a message to that window, and the playhead it draws is
+ * whatever that window reports back.
+ */
+export interface TransportDelegate {
+  play(fromBeat?: number): void;
+  pause(): void;
+  stop(): void;
+  seek(beat: number): void;
+}
+
 export class Engine {
   private store: Store;
   private ctx: AudioContext | null = null;
@@ -51,6 +65,50 @@ export class Engine {
   private preparing: Promise<void> | null = null;
   /** tape-scrub grains are throttled to one per grain interval */
   private lastScrubAt = 0;
+  /** non-null in a console window: transport is forwarded, never rolled here */
+  private transportDelegate: TransportDelegate | null = null;
+  /** transport mirrored from the studio window while this window delegates */
+  private mirrored = { playing: false, beat: 0 };
+  /** peak levels mirrored from the studio window, by meter key */
+  private mirroredLevels: Map<string, number> | null = null;
+  /** the output the master plays through; '' is the system default */
+  private outputDeviceId = '';
+
+  /** True when this window follows another window's transport instead of playing. */
+  get isConsole(): boolean {
+    return this.transportDelegate !== null;
+  }
+
+  /**
+   * Makes this window a console: every transport command is handed to `delegate`
+   * and no audio is started, which is what keeps a detached Mixer from playing
+   * a second, silent copy of the song over the studio's output.
+   */
+  setTransportDelegate(delegate: TransportDelegate | null): void {
+    this.transportDelegate = delegate;
+    this.playing = false;
+    this.stopPosition = this.mirrored.beat;
+    this.store.emit('transport');
+  }
+
+  /**
+   * Follows the studio window's transport. The console has no clock of its own,
+   * so its playhead, meters and record state are whatever the studio reports.
+   */
+  mirrorTransport(playing: boolean, beat: number): void {
+    if (!this.transportDelegate) return;
+    const next = clamp(beat, 0, this.store.project.length);
+    const changed = playing !== this.mirrored.playing || Math.abs(next - this.mirrored.beat) > 1e-9;
+    this.mirrored = { playing, beat: next };
+    this.playing = playing;
+    this.stopPosition = next;
+    if (changed) this.store.emit('transport');
+  }
+
+  /** Meter levels streamed from the studio window, or null to read locally. */
+  setMirroredLevels(levels: Map<string, number> | null): void {
+    this.mirroredLevels = levels;
+  }
 
   constructor(
     store: Store,
@@ -134,6 +192,7 @@ export class Engine {
   }
 
   get positionBeat(): number {
+    if (this.transportDelegate) return this.mirrored.beat;
     if (this.isCountingIn) return this.countInTarget;
     if (!this.playing || !this.ctx) return this.stopPosition;
     const beatsPerSecond = this.store.project.bpm / 60;
@@ -162,6 +221,10 @@ export class Engine {
    * seeking and tempo changes pass `countIn: false` so they resume instantly.
    */
   async play(fromBeat?: number, options: { countIn?: boolean; until?: number } = {}): Promise<void> {
+    if (this.transportDelegate) {
+      this.transportDelegate.play(fromBeat);
+      return;
+    }
     const ctx = await this.ensureContext();
     if (this.playing || this.isCountingIn) return;
     window.clearTimeout(this.silenceTimer);
@@ -195,6 +258,10 @@ export class Engine {
   }
 
   pause(): void {
+    if (this.transportDelegate) {
+      this.transportDelegate.pause();
+      return;
+    }
     if (this.isCountingIn) {
       this.cancelCountIn();
       return;
@@ -210,6 +277,10 @@ export class Engine {
   }
 
   stop(): void {
+    if (this.transportDelegate) {
+      this.transportDelegate.stop();
+      return;
+    }
     this.cancelCountIn(false);
     this.playing = false;
     this.clearTimer();
@@ -220,12 +291,24 @@ export class Engine {
   }
 
   togglePlay(): void {
+    if (this.transportDelegate) {
+      if (this.mirrored.playing) this.transportDelegate.pause();
+      else this.transportDelegate.play();
+      return;
+    }
     if (this.isCountingIn) this.pause();
     else if (this.playing) this.pause();
     else void this.play();
   }
 
   seek(beat: number): void {
+    if (this.transportDelegate) {
+      this.mirrored = { ...this.mirrored, beat: clamp(beat, 0, this.store.project.length) };
+      this.stopPosition = this.mirrored.beat;
+      this.transportDelegate.seek(beat);
+      this.store.emit('transport');
+      return;
+    }
     const wasPlaying = this.playing;
     const until = this.stopAt;
     this.cancelCountIn(false);
@@ -244,6 +327,14 @@ export class Engine {
    * ruler calls this dozens of times per second, so it must stay cheap.
    */
   locate(beat: number): void {
+    if (this.transportDelegate) {
+      if (this.mirrored.playing) return;
+      this.mirrored = { ...this.mirrored, beat: clamp(beat, 0, this.store.project.length) };
+      this.stopPosition = this.mirrored.beat;
+      this.transportDelegate.seek(this.mirrored.beat);
+      this.store.emit('transport');
+      return;
+    }
     if (this.isCountingIn) this.cancelCountIn(false);
     if (this.playing) return;
     this.stopPosition = clamp(beat, 0, this.store.project.length);
@@ -435,6 +526,64 @@ export class Engine {
     graph.masterDim.gain.setTargetAtTime(this.monitorDimOn ? dbToGain(-18) : 1, now, 0.01);
   }
 
+  /**
+   * Routes the master output to one device: an audio interface, the built-in
+   * speakers, or a virtual loopback device the studio should feed.
+   *
+   * Returns false when the browser cannot choose a device at all, so the panel
+   * can say so plainly instead of leaving a control that pretends to work. An
+   * empty id is the system default, which is what a fresh install uses.
+   */
+  async setOutputDevice(deviceId: string): Promise<boolean> {
+    const ctx = await this.ensureContext();
+    const sink = (ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> }).setSinkId;
+    if (typeof sink !== 'function') return false;
+
+    await sink.call(ctx, deviceId ?? '');
+    this.outputDeviceId = deviceId ?? '';
+    return true;
+  }
+
+  get outputDevice(): string {
+    return this.outputDeviceId;
+  }
+
+  /**
+   * A short tone through the master, in and out over half a second.
+   *
+   * This is how a chosen output is confirmed: the interface's own headphone
+   * socket makes the sound, so "is the mix coming out of the box I think it is"
+   * has an answer that does not involve playing a whole song.
+   */
+  async testOutput(): Promise<boolean> {
+    const ctx = await this.ensureContext();
+    const graph = this.graph;
+    if (!graph) return false;
+
+    const osc = ctx.createOscillator();
+    const level = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 440;
+
+    // Ramped rather than switched: a square edge out of a monitoring path is a
+    // click at whatever the interface's level is set to.
+    const now = ctx.currentTime + 0.02;
+    level.gain.setValueAtTime(0, now);
+    level.gain.linearRampToValueAtTime(0.2, now + 0.03);
+    level.gain.setValueAtTime(0.2, now + 0.4);
+    level.gain.linearRampToValueAtTime(0, now + 0.5);
+
+    osc.connect(level);
+    level.connect(graph.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.55);
+    osc.onended = () => {
+      osc.disconnect();
+      level.disconnect();
+    };
+    return true;
+  }
+
   async previewNote(trackId: string, pitch: number, duration = 0.5): Promise<void> {
     const ctx = await this.ensureContext();
     const chain = this.graph?.tracks.get(trackId);
@@ -476,6 +625,7 @@ export class Engine {
   }
 
   trackPeak(trackId: string): number {
+    if (this.mirroredLevels) return this.mirroredLevels.get(`track:${trackId}`) ?? 0;
     const chain = this.graph?.tracks.get(trackId);
     if (!chain?.analyser || !chain.meter) return 0;
     return this.readPeak(chain.analyser, chain.meter);
@@ -503,6 +653,7 @@ export class Engine {
 
   /** Peak level of an aux return channel, for its mixer meter. */
   returnPeak(index: number): number {
+    if (this.mirroredLevels) return this.mirroredLevels.get(`return:${index}`) ?? 0;
     const chain = this.graph?.returns[index];
     if (!chain?.analyser || !chain.meter) return 0;
     return this.readPeak(chain.analyser, chain.meter);
@@ -542,6 +693,7 @@ export class Engine {
   }
 
   masterPeak(): number {
+    if (this.mirroredLevels) return this.mirroredLevels.get('master') ?? 0;
     const analyser = this.graph?.masterAnalyser;
     const meter = this.graph?.masterMeter;
     if (!analyser || !meter) return 0;

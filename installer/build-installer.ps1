@@ -10,7 +10,7 @@
         -SkipNative   reuse an existing native/build instead of recompiling
         -OpenOutput   open the folder with the finished installer
 
-    Requirements: Node.js 20+, Visual Studio 2022 with Desktop C++,
+    Requirements: Node.js 22.12+, Visual Studio 2022 with Desktop C++,
     CMake 3.25+, and Inno Setup 6.3+ (https://jrsoftware.org/isdl.php).
 #>
 
@@ -40,7 +40,7 @@ function Require-Command([string]$name, [string]$hint) {
 
 if (-not $SkipUi) {
     Write-Step "Building the web UI"
-    Require-Command npm 'Install Node.js 20 or newer.'
+    Require-Command npm 'Install Node.js 22.12 or newer.'
     Push-Location $root
     try {
         npm ci

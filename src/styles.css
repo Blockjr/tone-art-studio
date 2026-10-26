@@ -2274,21 +2274,75 @@ body.is-reordering .track-grip { cursor: grabbing; }
   cursor: pointer;
 }
 
-/* A detached panel window shows the panel alone, with no app chrome. */
-body.is-detached { background: #08090c; }
-body.is-detached .topbar,
-body.is-detached .main,
-body.is-detached .drawer-backdrop { display: none !important; }
-body.is-detached .agent.rig-panel {
+/*
+ * Console windows.
+ *
+ * The desktop shell opens a second window on the same interface with
+ * `?panel=<id>`, and src/ui/consoles.ts moves that console into #console-host.
+ * What is left is the console and nothing else: not tidiness for its own sake,
+ * but because the arrangement would otherwise keep painting, scrolling and
+ * taking the pointer behind a mixer the user is dragging to a second screen.
+ * The console is then given the whole window, whether it is normally a docked
+ * panel or one that slides in from the edge.
+ */
+body.is-detached { background: #08090c; overflow: hidden; }
+body.is-detached .app,
+body.is-detached .drawer-backdrop,
+body.is-detached .start-screen,
+body.is-detached .timeline-tip,
+body.is-detached .toast { display: none !important; }
+
+.console-host {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #08090c;
+}
+.console-host > * { flex: 1 1 auto; min-height: 0; min-width: 0; }
+
+/* A docked console fills the window: never folded, never waiting for a toggle. */
+body.is-detached .console-host > .mixer,
+body.is-detached .console-host > .browser,
+body.is-detached .console-host > .rack,
+body.is-detached .console-host > .preview {
+  display: flex !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  max-width: none !important;
+  border-top: 0;
+  border-radius: 0;
+}
+body.is-detached .console-host > .mixer.is-collapsed .mixer-strips { display: flex; }
+
+/* A floating panel sits at full size instead of slid in from the edge. */
+body.is-detached .console-host > .agent {
   position: static !important;
   inset: auto !important;
   width: 100% !important;
   max-width: none !important;
-  height: 100vh;
+  height: 100% !important;
   border: 0;
   border-radius: 0;
   transform: none !important;
   display: flex !important;
+}
+
+/* The note editor fills its window instead of floating over the studio. */
+body.is-detached .console-host > .piano-overlay {
+  position: static !important;
+  display: flex !important;
+  padding: 0;
+  background: #0b0e13;
+}
+body.is-detached .console-host > .piano-overlay > .piano {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 /*

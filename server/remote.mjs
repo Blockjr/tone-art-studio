@@ -372,3 +372,36 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+/**
+ * Closes the bridge without ending the process it runs in.
+ *
+ * The desktop app starts this bridge inside itself, so the port, the listening
+ * socket and every tablet connection have to go when the app closes — a socket
+ * left open keeps the process alive and the app appears not to close at all.
+ * `process.exit(0)` is right for `npm run remote`, where the bridge *is* the
+ * program, and wrong here, so closing and exiting are separate.
+ */
+export function stopRemoteBridge() {
+  return new Promise((resolve) => {
+    clearInterval(heartbeat);
+    for (const client of clients) {
+      try {
+        client.socket.close(1001, 'bridge stopping');
+      } catch {
+        /* already gone */
+      }
+    }
+    try {
+      wss.close();
+    } catch {
+      /* already closed */
+    }
+    const done = setTimeout(() => resolve(false), 500);
+    done.unref?.();
+    server.close(() => {
+      clearTimeout(done);
+      resolve(true);
+    });
+  });
+}

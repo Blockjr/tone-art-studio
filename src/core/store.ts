@@ -1,4 +1,5 @@
 import type { AudioAsset, Clip, Project, Track } from './types';
+import type { SessionView } from './sync';
 
 export type ChangeReason = 'structure' | 'params' | 'selection' | 'view' | 'transport';
 
@@ -157,6 +158,35 @@ export class Store {
     this.project = project;
     this.selectedTrackId = project.tracks[0]?.id ?? '';
     this.selectedClipId = null;
+    this.emit('structure');
+  }
+
+  /**
+   * Takes the session another window sent.
+   *
+   * It goes into no undo stack on purpose: Ctrl+Z here must undo what was done
+   * at this window, never what was done in the window next to it. A fader moved
+   * in a detached mixer arrives as a new state, and the undo history this
+   * window had stays exactly as it was.
+   */
+  applyRemote(project: Project, view?: SessionView): void {
+    this.project = project;
+    if (!this.project.tracks.some((track) => track.id === this.selectedTrackId)) {
+      this.selectedTrackId = this.project.tracks[0]?.id ?? '';
+    }
+    if (this.selectedClipId && !this.project.clips.some((clip) => clip.id === this.selectedClipId)) {
+      this.selectedClipId = null;
+    }
+
+    if (view) {
+      if (Number.isFinite(view.zoom)) this.zoom = Math.min(400, Math.max(6, view.zoom));
+      if (Number.isFinite(view.snap)) this.snap = view.snap;
+      if (view.selectedTrackId && this.trackById(view.selectedTrackId)) this.selectedTrackId = view.selectedTrackId;
+      if (view.selectedClipId === null || (view.selectedClipId && this.project.clips.some((clip) => clip.id === view.selectedClipId))) {
+        this.selectedClipId = view.selectedClipId;
+      }
+    }
+
     this.emit('structure');
   }
 

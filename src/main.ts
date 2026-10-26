@@ -60,6 +60,23 @@ import {
   type Viewport,
 } from './core/layout';
 import { Mixer } from './ui/mixer';
+import {
+  ConsolesMenu,
+  detachButton,
+  detachedConsoleId,
+  hostDetachedConsole,
+  consoleRegistration,
+  openConsoleWindow,
+  registerConsole,
+  type ConsoleId,
+} from './ui/consoles';
+import {
+  SessionLink,
+  broadcastChannel,
+  type ConsoleCommand,
+  type SessionSnapshot,
+  type SessionView,
+} from './core/sync';
 import { Rack } from './ui/rack';
 import { AssistantPanel } from './ui/agent';
 import { RemotePanel } from './ui/remote';
@@ -70,7 +87,9 @@ import {
   InputRecorder,
   describeCapture,
   listInputDevices,
+  listOutputDevices,
   loopSlicesFromCapture,
+  measureInputLevel,
   takeFromRecording,
   type RecordingResult,
 } from './audio/recorder';
@@ -173,7 +192,12 @@ const midiPanel = new MidiPanel(store, engine, {
   },
   // Notes from a port and from the computer keyboard both arrive here, which is
   // what lets record capture either source without the MIDI panel knowing.
-  onNote: (pitch, velocity, down) => captureMidiNote(pitch, velocity, down),
+  onNote: (pitch, velocity, down) => {
+    captureMidiNote(pitch, velocity, down);
+    // A console window sounds the note itself - it has the instrument - but the
+    // pass being recorded lives in the studio window, so the note is sent there.
+    if (isConsoleWindow) link?.command({ type: 'note', pitch, velocity, down });
+  },
   toast,
 });
 const mixer = new Mixer(store, engine, $('mixer-strips'), {
@@ -207,6 +231,16 @@ const nativePanel = new NativePanel(
     const result = await exportStemsForVst(store);
     toast(`Wrote ${result.tracks} stems to “${result.folder}”`);
     return `Wrote ${result.tracks} stems to “${result.folder}”. Load that folder here to mix through VST3.`;
+  },
+  // An external interface is an input and an output, and both are chosen in the
+  // Studio Rig console: the tool report is here, the recorder captures there.
+  {
+    listInputs: () => listInputDevices(),
+    listOutputs: () => listOutputDevices(),
+    currentOutput: () => engine.outputDevice,
+    setOutput: (deviceId) => engine.setOutputDevice(deviceId),
+    testOutput: () => engine.testOutput(),
+    checkInput: (deviceId) => measureInputLevel(deviceId),
   },
 );
 const recorder = new InputRecorder();
@@ -268,15 +302,194 @@ remotePanel.mount();
 nativePanel.mount();
 midiPanel.mount();
 
-// A panel window opened from the desktop shell (`?panel=midi`) shows that one
-// panel on its own, which is how a panel is moved to a second screen.
-const detachedPanel = new URLSearchParams(window.location.search).get('panel');
-if (detachedPanel) {
-  document.body.classList.add('is-detached');
-  if (detachedPanel === 'midi') midiPanel.openPanel();
-  else if (detachedPanel === 'rig') nativePanel.open();
-}
 takePanel.mount();
+
+// ------------------------------------------------------------- console windows
+//
+// Every console that is worked in for a while can be lifted into a window of
+// its own: the mixer, the MIDI panel, the browser, the rack, the audio preview,
+// the takes list, the note editor and the Studio Rig. src/ui/consoles.ts moves
+// one console into a window; src/core/sync.ts keeps both windows on one session,
+// so a fader moved in a detached mixer moves in the studio window too.
+
+const must = (selector: string): HTMLElement => {
+  const node = document.querySelector<HTMLElement>(selector);
+  if (!node) throw new Error(`Missing console element ${selector}`);
+  return node;
+};
+
+registerConsole({
+  id: 'mixer',
+  title: 'Mixer',
+  detail: 'Faders, pans, sends, inserts and scopes, on their own screen',
+  element: $('mixer'),
+  // A folded console has no faders to reach, so its window always opens unfolded.
+  open: () => {
+    if (layout.mixerCollapsed) applyLayout({ ...layout, mixerCollapsed: false }, true);
+  },
+});
+registerConsole({
+  id: 'browser',
+  title: 'Browser',
+  detail: 'Library, loops and the file explorer',
+  element: $('browser'),
+  open: () => $('browser').classList.remove('is-drawer'),
+});
+registerConsole({
+  id: 'rack',
+  title: 'Device Rack',
+  detail: 'The inserts of the selected track, with every control live',
+  element: $('rack'),
+  open: () => $('rack').classList.remove('is-drawer'),
+});
+registerConsole({
+  id: 'preview',
+  title: 'Audio Preview',
+  detail: 'Waveform, loop region, tempo and pitch, on a screen of their own',
+  element: previewPanel.element,
+  open: () => previewPanel.open(),
+});
+registerConsole({
+  id: 'midi',
+  title: 'MIDI',
+  detail: 'Controllers, external inputs, the keyboard and MIDI effects',
+  element: $('midi-panel'),
+  open: () => midiPanel.openPanel(),
+});
+registerConsole({
+  id: 'takes',
+  title: 'Takes',
+  detail: 'Recording input, takes and comping',
+  element: must('.take-panel'),
+  open: () => takePanel.open(),
+});
+registerConsole({
+  id: 'notes',
+  title: 'Notes',
+  detail: 'The piano roll for the selected MIDI clip',
+  element: must('.piano-overlay'),
+  open: () => {
+    openNotes();
+  },
+});
+registerConsole({
+  id: 'rig',
+  title: 'Studio Rig',
+  detail: 'Audio device, virtual ASIO driver and VST3 hosting',
+  element: $('rig-panel'),
+  open: () => nativePanel.open(),
+});
+
+/** The console this window is showing, when the desktop shell opened it for one. */
+const detachedConsole = detachedConsoleId();
+hostDetachedConsole();
+const isConsoleWindow = detachedConsole !== null;
+
+/** Puts the ⧉ button in a console header that is built into the layout. */
+function addDetachButton(id: ConsoleId, header: Element | null): void {
+  const button = detachButton(id);
+  if (button && header) header.appendChild(button);
+}
+addDetachButton('mixer', $('mixer').querySelector('.mixer-head'));
+addDetachButton('browser', $('browser').querySelector('.panel-head'));
+addDetachButton('rack', $('rack').querySelector('.panel-head'));
+addDetachButton('preview', previewPanel.element.querySelector('.preview-head'));
+addDetachButton('takes', must('.take-panel').querySelector('.agent-head'));
+
+const consolesMenu = new ConsolesMenu((id) => {
+  // In a browser there is no second window to open, so the menu brings the
+  // docked console forward rather than doing nothing at all.
+  if (!openConsoleWindow(id)) consoleRegistration(id)?.open();
+});
+$('btn-rig').before(consolesMenu.element);
+
+// ---------------------------------------------------------------- session link
+//
+// One window owns the session and the audio device - the studio window - and
+// the console windows follow it. Without this a console would be a second copy
+// of the app: it would show a session of its own and control nothing.
+
+/** This window's view, so a console opens looking at what the studio is looking at. */
+function sessionView(): SessionView {
+  return {
+    zoom: store.zoom,
+    snap: store.snap,
+    selectedTrackId: store.selectedTrackId,
+    selectedClipId: store.selectedClipId,
+  };
+}
+
+const sessionSnapshot = (): SessionSnapshot => ({ project: store.project, view: sessionView() });
+
+let link: SessionLink | null = null;
+const sessionChannel = broadcastChannel();
+
+/** A console asking this window to do what only it can do: it owns the sound card. */
+function runConsoleCommand(command: ConsoleCommand): void {
+  if (command.type === 'transport') {
+    if (command.action === 'play') void engine.play(command.beat);
+    else if (command.action === 'pause') engine.pause();
+    else if (command.action === 'stop') engine.stop();
+    else engine.seek(command.beat ?? engine.positionBeat);
+    return;
+  }
+
+  // A key pressed on a console's keyboard sounds in that console, and is
+  // recorded here, where the armed pass and the project live.
+  captureMidiNote(command.pitch, command.velocity, command.down);
+}
+
+if (sessionChannel) {
+  link = new SessionLink({
+    channel: sessionChannel,
+    role: isConsoleWindow ? 'satellite' : 'host',
+    snapshot: sessionSnapshot,
+    onSnapshot: (snapshot) => {
+      store.applyRemote(snapshot.project, snapshot.view);
+      projectName = store.project.name;
+    },
+    onCommand: (command) => runConsoleCommand(command),
+    onLive: (live) => {
+      engine.setMirroredLevels(new Map(Object.entries(live.levels)));
+      engine.mirrorTransport(live.playing, live.positionBeat);
+    },
+  });
+
+  store.subscribe((reason) => {
+    // The transport is streamed separately, and a project that arrived from the
+    // other window is never sent straight back.
+    if (!link || link.applying || reason === 'transport') return;
+    link.publish(sessionSnapshot());
+  });
+
+  link.start();
+}
+
+if (isConsoleWindow) {
+  // A console has no transport of its own: its play button is a message to the
+  // window that owns the audio device, so nothing ever plays twice.
+  engine.setTransportDelegate({
+    play: (fromBeat) => link?.command({ type: 'transport', action: 'play', beat: fromBeat }),
+    pause: () => link?.command({ type: 'transport', action: 'pause' }),
+    stop: () => link?.command({ type: 'transport', action: 'stop' }),
+    seek: (beat) => link?.command({ type: 'transport', action: 'seek', beat }),
+  });
+}
+
+/** Streams the transport and the meters out to the console windows. */
+function pumpSession(): void {
+  if (link && !isConsoleWindow) {
+    const levels: Record<string, number> = {};
+    for (const track of store.project.tracks) levels[`track:${track.id}`] = engine.trackPeak(track.id);
+    store.project.returns.forEach((_bus, index) => {
+      levels[`return:${index}`] = engine.returnPeak(index);
+    });
+    levels.master = engine.masterPeak();
+    link.publishLive({ playing: engine.isPlaying, positionBeat: engine.positionBeat, levels });
+  }
+  window.setTimeout(pumpSession, engine.isPlaying ? 90 : 500);
+}
+pumpSession();
 
 // The top bar scrolls sideways at narrow widths. Its scrollbar is hidden, so a
 // wheel over it has to move the bar rather than do nothing.
@@ -1420,6 +1633,10 @@ function setDirty(next: boolean): void {
 
 function scheduleAutosave(): void {
   if (!preferences.autosave) return;
+  // Only the window that owns the session writes the recovery snapshot. Two
+  // windows autosaving one session would overwrite each other in turn, and the
+  // one that lost would come back on the next launch.
+  if (isConsoleWindow) return;
   window.clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(() => {
     store.project.name = projectName;

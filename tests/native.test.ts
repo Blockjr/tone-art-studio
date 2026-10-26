@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFERENCES } from '../src/core/session';
-import { NativePanel } from '../src/ui/native';
+import { NativePanel, type AudioIoHooks } from '../src/ui/native';
 import {
   NativeBridge,
   createJuceTarget,
@@ -318,5 +318,156 @@ describe('studio rig VST3 mixer', () => {
       trackId: 'track-1',
       identifier: 'FabFilter-Pro-C 2',
     });
+  });
+});
+
+describe('the audio interface section', () => {
+  const button = (text: string): HTMLButtonElement =>
+    [...document.querySelectorAll<HTMLButtonElement>('.rig-panel button')].find(
+      (entry) => entry.textContent === text,
+    )!;
+
+  const selectFor = (title: string): HTMLSelectElement =>
+    document.querySelector<HTMLSelectElement>(`.rig-panel select[title="${title}"]`)!;
+
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+  function mountPanel(overrides: Partial<AudioIoHooks> = {}) {
+    document.body.innerHTML = '';
+    const target = new FakeTarget();
+    const bridge = new NativeBridge(target);
+    const saved: string[] = [];
+
+    const hooks: AudioIoHooks = {
+      listInputs: async () => [{ id: 'in-1', label: 'AudioBox 22VSL In 1' }],
+      listOutputs: async () => [
+        { id: 'out-1', label: 'AudioBox 22VSL Out 1' },
+        { id: 'out-2', label: 'Speakers' },
+      ],
+      currentOutput: () => '',
+      setOutput: async () => true,
+      testOutput: async () => true,
+      checkInput: async () => ({ peak: 0.5, clipped: false, opened: true }),
+      ...overrides,
+    };
+
+    const panel = new NativePanel(
+      bridge,
+      { ...DEFAULT_PREFERENCES },
+      (next) => saved.push(next.recordDeviceId ?? ''),
+      async () => 'exported',
+      hooks,
+    );
+    panel.mount();
+
+    return { target, saved };
+  }
+
+  it('lists the interfaces the machine offers, default first', async () => {
+    mountPanel();
+    await settle();
+
+    const outputs = selectFor('The device the mix plays through');
+    const inputs = selectFor('The input recording and monitoring use');
+
+    expect([...outputs.options].map((option) => option.textContent)).toEqual([
+      'System default',
+      'AudioBox 22VSL Out 1',
+      'Speakers',
+    ]);
+    expect([...inputs.options].map((option) => option.textContent)).toEqual([
+      'System default',
+      'AudioBox 22VSL In 1',
+    ]);
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('2 outputs · 1 input found');
+  });
+
+  it('routes the mix to the chosen output and says which one it was', async () => {
+    const chois: string[] = [];
+    mountPanel({
+      setOutput: async (id) => {
+        chois.push(id);
+        return true;
+      },
+    });
+    await settle();
+
+    const outputs = selectFor('The device the mix plays through');
+    outputs.value = 'out-1';
+    outputs.dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(chois).toEqual(['out-1']);
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('The mix now plays through AudioBox 22VSL Out 1');
+  });
+
+  it('says so when the build cannot choose an output at all', async () => {
+    mountPanel({ setOutput: async () => false });
+    await settle();
+
+    const outputs = selectFor('The device the mix plays through');
+    outputs.value = 'out-2';
+    outputs.dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('cannot choose an output device');
+  });
+
+  it('remembers the input that recording will use', async () => {
+    const { saved } = mountPanel();
+    await settle();
+
+    const inputs = selectFor('The input recording and monitoring use');
+    inputs.value = 'in-1';
+    inputs.dispatchEvent(new Event('change'));
+
+    expect(saved).toEqual(['in-1']);
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('Recording will use AudioBox 22VSL In 1');
+  });
+
+  it('reports what a checked input actually hears', async () => {
+    mountPanel({ checkInput: async () => ({ peak: 0.5, clipped: false, opened: true }) });
+    await settle();
+
+    button('Check input').click();
+    await settle();
+
+    // −6.0 dBFS for half scale: the number a singer can compare with the meter.
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('Heard -6.0 dBFS');
+  });
+
+  it('warns about a clipping input and about silence', async () => {
+    mountPanel({ checkInput: async () => ({ peak: 1, clipped: true, opened: true }) });
+    await settle();
+
+    button('Check input').click();
+    await settle();
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('clipping');
+
+    mountPanel({ checkInput: async () => ({ peak: 0, clipped: false, opened: true }) });
+    await settle();
+    button('Check input').click();
+    await settle();
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('Silence');
+
+    mountPanel({
+      checkInput: async () => ({ peak: 0, clipped: false, opened: false, error: 'NotAllowedError' }),
+    });
+    await settle();
+    button('Check input').click();
+    await settle();
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('NotAllowedError');
+  });
+
+  it('plays a test tone through the chosen output', async () => {
+    let tones = 0;
+    mountPanel({ testOutput: async () => (tones += 1) > 0 });
+    await settle();
+
+    button('Test tone').click();
+    await settle();
+
+    expect(tones).toBe(1);
+    expect(document.querySelector('.rig-panel')?.textContent).toContain('A tone played through');
   });
 });

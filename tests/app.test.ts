@@ -774,7 +774,10 @@ describe('Tone Art Studio app shell', () => {
     expect(rig.querySelector('.rig-badge')?.textContent).toBe('browser');
     expect(rig.textContent).toContain('desktop build only');
 
-    const select = rig.querySelector('.rig-select') as HTMLSelectElement;
+    // The native device list is unavailable in a browser build. The panel's
+    // first select is the machine's own audio device, which works everywhere,
+    // so the native one is named here rather than counted from the top.
+    const select = rig.querySelector('#rig-device-select') as HTMLSelectElement;
     expect(select.disabled).toBe(true);
     expect(rig.querySelectorAll('.rig-item').length).toBe(0);
   });
@@ -1077,5 +1080,112 @@ describe('MIDI recording', () => {
     await wait(40);
     expect(punchIn.classList.contains('is-on')).toBe(false);
     expect(punchOut.classList.contains('is-on')).toBe(false);
+  });
+});
+
+/**
+ * Console windows: the same session, several windows.
+ *
+ * A console is offered in the Consoles menu whether or not there is a desktop
+ * shell around the interface. Without one the menu brings the docked console
+ * forward instead, because a menu item that silently does nothing is worse than
+ * no menu item at all.
+ */
+describe('console windows', () => {
+  it('lists every console, and brings it forward when there is no second window', async () => {
+    const menuButton = document.getElementById('btn-consoles') as HTMLButtonElement;
+    expect(menuButton).toBeTruthy();
+    expect(menuButton.title).toContain('own window');
+
+    // Fold the console first: opening it again has to unfold it.
+    const toggle = $('btn-toggle-mixer');
+    if (!($('mixer').classList.contains('is-collapsed'))) {
+      toggle.click();
+      await wait(40);
+    }
+    expect($('mixer').classList.contains('is-collapsed')).toBe(true);
+
+    menuButton.click();
+    await wait(40);
+    const items = [...document.querySelectorAll<HTMLElement>('.consoles-menu .file-menu-item')];
+    expect(items.length).toBeGreaterThanOrEqual(8);
+
+    const mixer = items.find((item) => item.textContent?.includes('Mixer'));
+    expect(mixer).toBeTruthy();
+    mixer?.click();
+    await wait(60);
+
+    expect($('mixer').classList.contains('is-collapsed')).toBe(false);
+  });
+
+  it('sends a console to its own window through the desktop shell', async () => {
+    const opened: string[] = [];
+    (window as unknown as { tas: { openPanel: (panel: string) => void } }).tas = {
+      openPanel: (panel) => opened.push(panel),
+    };
+
+    try {
+      const menuButton = document.getElementById('btn-consoles') as HTMLButtonElement;
+      menuButton.click();
+      await wait(40);
+
+      const items = [...document.querySelectorAll<HTMLElement>('.consoles-menu .file-menu-item')];
+      items.find((item) => item.textContent?.includes('MIDI'))?.click();
+      await wait(40);
+
+      expect(opened).toEqual(['midi']);
+    } finally {
+      delete (window as unknown as { tas?: unknown }).tas;
+    }
+  });
+
+  it('moves an insert anywhere in its chain by dragging its slot number', async () => {
+    const masterTab = [...document.querySelectorAll<HTMLElement>('.rack-tab')].at(-1) as HTMLElement;
+    masterTab.click();
+    await wait(80);
+
+    const cards = (): HTMLElement[] => [
+      ...document.querySelectorAll<HTMLElement>('#rack-body .device[data-drag-id]'),
+    ];
+    const titles = (): string[] =>
+      cards().map((card) => card.querySelector('.device-title')?.textContent ?? '');
+
+    expect(cards().length).toBeGreaterThan(1);
+    const before = titles();
+
+    // jsdom has no layout, so the cards need a geometry a drop can land on.
+    const list = cards();
+    list.forEach((node, index) => {
+      node.getBoundingClientRect = () =>
+        ({
+          left: 0,
+          top: index * 200,
+          width: 320,
+          height: 200,
+          right: 320,
+          bottom: index * 200 + 200,
+          x: 0,
+          y: index * 200,
+          toJSON: () => ({}),
+        }) as DOMRect;
+    });
+
+    const last = list[list.length - 1];
+    const grip = last.querySelector('.device-slot') as HTMLElement;
+    expect(grip).toBeTruthy();
+    expect(grip.title).toContain('Drag');
+
+    grip.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+    window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 10, clientY: -30 }));
+    window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+    await wait(120);
+
+    // The last insert is now the first, and nothing was duplicated or lost.
+    expect(titles().at(0)).toBe(before.at(-1));
+    expect([...titles()].sort()).toEqual([...before].sort());
+
+    $('btn-undo').click();
+    await wait(120);
+    expect(titles()).toEqual(before);
   });
 });
