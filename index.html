@@ -10,8 +10,73 @@
   <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
   <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="application-name" content="Tone Art Studio" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Tone Art" />
 </head>
 <body>
+  <!--
+    A blank white window tells nobody anything. This runs before any module is
+    parsed (plain ES5, no arrow functions, no template strings) and turns a
+    failed start into readable text: a thrown error, an unhandled rejection, a
+    script that never loads, or an engine too old for the bundle.
+  -->
+  <script>
+    (function () {
+      var shown = false;
+
+      function report(title, detail) {
+        if (shown) return;
+        shown = true;
+        try {
+          var box = document.createElement('div');
+          box.setAttribute('style', [
+            'position:fixed', 'inset:0', 'z-index:2147483647',
+            'background:#0b0d12', 'color:#e8ecf5', 'padding:32px 28px',
+            'font:14px/1.6 system-ui,-apple-system,Segoe UI,sans-serif',
+            'white-space:pre-wrap', 'overflow:auto'
+          ].join(';'));
+          box.textContent =
+            'Tone Art Studio could not start\n\n' + title + '\n\n' + (detail || '') +
+            '\n\nBrowser: ' + navigator.userAgent +
+            '\n\nSend this text and it can be fixed.';
+          document.body.appendChild(box);
+        } catch (e) {
+          document.title = 'Tone Art Studio: ' + title;
+        }
+      }
+
+      window.addEventListener('error', function (event) {
+        var target = event.target || {};
+        if (target && target.tagName === 'SCRIPT') {
+          report('A script failed to load.', target.src || '');
+          return;
+        }
+        report(event.message || 'Unknown error', (event.filename || '') +
+          (event.lineno ? ':' + event.lineno : ''));
+      }, true);
+
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event.reason;
+        report('Startup stopped on a rejected promise.',
+          reason && reason.stack ? reason.stack : String(reason));
+      });
+
+      window.setTimeout(function () {
+        var app = document.getElementById('app');
+        if (!app || app.children.length === 0) {
+          report('The interface never appeared.',
+            'The page loaded but the application did not draw anything in ' +
+            '8 seconds. That usually means the browser is too old for the ' +
+            'bundle, or a script was blocked.');
+        }
+      }, 8000);
+    })();
+  </script>
+
   <div class="app" id="app">
 
     <header class="topbar">
@@ -203,5 +268,14 @@
   <div class="toast" id="toast"></div>
 
   <script type="module" src="/src/main.ts"></script>
+  <script>
+    // Registers the offline shell so Edge/Chrome offer "Install this site as an
+    // app". It is optional: a browser without service workers just skips it.
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/service-worker.js').catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

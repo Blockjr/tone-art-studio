@@ -16,6 +16,10 @@ export default defineConfig({
     allowedHosts: [previewHost],
   },
   build: {
-    target: 'es2022',
+    // es2019 rather than es2022: the same bundle also runs inside the desktop
+    // host's WebView2, which on an un-updated Windows machine can be an older
+    // Chromium than the browser. Nothing in the app needs syntax newer than
+    // this, and a lower target removes a whole class of "blank window" reports.
+    target: 'es2019',
   },
 });

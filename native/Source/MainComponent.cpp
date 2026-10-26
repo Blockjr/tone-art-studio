@@ -25,7 +25,7 @@ MainComponent::MainComponent()
     if (uiDirectory.isDirectory())
         webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
     else
-        webView->goToURL ("http://localhost:3000");
+        webView->goToURL (hostedUiUrl());
 
     engine.openDevice ({}, {});
     setSize (1500, 950);
@@ -71,9 +71,39 @@ void MainComponent::locateUi()
     uiDirectory = juce::File();
 }
 
+/**
+ * Where the window goes when no local ui/ folder is next to the executable.
+ *
+ * This used to be http://localhost:3000, which is only correct on a developer's
+ * machine: an installed copy without its ui/ folder then opened to a blank
+ * white page with nothing to click. The hosted build is the same interface, so
+ * an installed app always has something usable to show, and the native bridge
+ * still works because the resource provider is not involved.
+ */
+juce::String MainComponent::hostedUiUrl()
+{
+    const auto override = juce::SystemStats::getEnvironmentVariable ("HYBRID_UI_URL", {});
+
+    if (override.isNotEmpty())
+        return override;
+
+    return "https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/";
+}
+
 void MainComponent::paint (juce::Graphics& graphics)
 {
     graphics.fillAll (juce::Colour (0xff08090c));
+
+    // Only visible when the web view has not painted over the window yet, i.e.
+    // during a slow first load. It is deliberately plain so a failure reads as
+    // a message instead of an unexplained white window.
+    graphics.setColour (juce::Colour (0xff93a0b8));
+    graphics.setFont (juce::FontOptions (14.0f));
+    graphics.drawText (uiDirectory.isDirectory()
+                           ? "Loading Tone Art Studio\xe2\x80\xa6"
+                           : "Loading Tone Art Studio from the web\xe2\x80\xa6",
+                       getLocalBounds().reduced (24).removeFromTop (40),
+                       juce::Justification::centredTop);
 }
 
 void MainComponent::resized()

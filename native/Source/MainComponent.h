@@ -28,6 +28,7 @@ private:
     void chooseStemsFolder();
 
     void locateUi();
+    static juce::String hostedUiUrl();
 
     std::optional<juce::WebBrowserComponent::Resource> getResource (const juce::String& path) const;
     static juce::String mimeTypeFor (const juce::String& extension);

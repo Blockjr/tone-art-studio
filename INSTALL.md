@@ -9,14 +9,47 @@ Tone Art Studio ships in two forms:
 
 ## Already-built installer
 
-The current build is published from the Windows CI run in the build repository
-(private — sign in to GitHub first):
+The current build is published from the Windows CI run. The public copy needs
+no GitHub account:
 
 | What | Where |
 | --- | --- |
-| Setup program (7.3 MB) | <https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe> |
-| Release page | <https://github.com/Blockjr/tone-art-studio/releases/tag/v0.1.0> |
-| Build log and artefacts | <https://github.com/Blockjr/tone-art-studio/actions/runs/40225917749> |
+| Setup program (7.3 MB, no login) | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/ToneArtStudioSetup-0.1.0.exe> |
+| Checksum file | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/SHA256.txt> |
+| Repository copy | [`installer-dist/ToneArtStudioSetup-0.1.0.exe`](installer-dist/ToneArtStudioSetup-0.1.0.exe) |
+| Release asset (sign in first — this repository is private) | <https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe> |
+| Build log | <https://github.com/Blockjr/tone-art-studio/actions/runs/40225917749> |
+
+## Download zips (no login needed)
+
+Each part is a separate zip, and `ToneArtStudio-ALL.zip` holds all four.
+
+| What | Where |
+| --- | --- |
+| **Download page** (kit + source, no login) | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/> |
+| **Desktop kit** — installer, tablet remote, setup script | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/ToneArtStudio-2-Desktop-and-Remote-Kit.zip> |
+| **Source code** zip | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/ToneArtStudio-3-Source-Code.zip> |
+| Release asset (public repository) | <https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe> |
+| Raw copy in the repository | <https://raw.githubusercontent.com/Blockjr/tone-art-studio/main/installer-dist/ToneArtStudioSetup-0.1.0.exe> |
+
+The repository is public, so every one of those links works without signing in.
+The zips are also in `deliverables/`, with their SHA-256 values in
+`deliverables/README.txt`.
+
+### The desktop kit — app **and** tablet remote, one download
+
+Unzip `ToneArtStudio-2-Desktop-and-Remote-Kit.zip`, then double-click **`Tone Art Studio Desktop Setup.cmd`**. It installs
+the app if it is not installed yet and puts **two icons on the Desktop**:
+
+| Icon | What it does |
+| --- | --- |
+| **Tone Art Studio** | the app |
+| **Tone Art Remote** | starts the tablet bridge, prints the address for the tablet and opens the controller |
+
+The remote icon needs Node.js; the setup script installs it through `winget`
+when it is missing (or opens nodejs.org if `winget` is unavailable). Details are
+in `README.txt` inside the zip. The source of the kit is `remote-kit/` in this
+repository.
 
 `ToneArtStudioSetup-0.1.0.exe` — 7,633,647 bytes,
 SHA-256 `fa386df3c5158ef5f376211e019c22081bc3fb756db310f4dee8708c375b95bf`.
