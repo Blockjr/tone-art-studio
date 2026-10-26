@@ -3,8 +3,13 @@
 
     The workflow that calls this stays deliberately tiny so the build logic lives
     in the repository with the rest of the project, not in YAML: this script
-    guarantees Inno Setup, runs installer\build-installer.ps1, then uploads the
-    finished setup program and prints a public download link.
+    guarantees Inno Setup, runs installer\build-installer.ps1, adds Microsoft's
+    WebView2 runtime bootstrapper to the payload and recompiles setup so the
+    installer can put the runtime back on a PC that never had it, then prints a
+    public download link.
+
+    The rebuild costs about two seconds because the native binaries and the web
+    UI are already on disk; only ISCC runs again.
 
     Run it the same way locally if you want exactly what CI produces:
 
@@ -23,6 +28,33 @@ if (-not (Test-Path $iscc)) {
 }
 
 & (Join-Path $PSScriptRoot 'build-installer.ps1')
+
+$version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+$buildDir = Join-Path $root 'native\build\HybridStudio_artefacts\Release'
+
+# Windows draws this app's whole interface with the WebView2 runtime. Microsoft
+# ships it with Edge on most machines, but a PC that never received it starts the
+# app into an empty window. Setup can install it for the user - provided the
+# bootstrapper is inside the payload, which is what this block adds. Without it
+# setup still installs and the app explains what is missing instead of showing a
+# blank window, so a failed download is a warning, not an error.
+$webviewSetup = Join-Path $buildDir 'MicrosoftEdgeWebView2Setup.exe'
+if (-not (Test-Path $webviewSetup)) {
+    Write-Host ''
+    Write-Host '== Fetching the Microsoft WebView2 bootstrapper' -ForegroundColor Cyan
+    $webviewUrl = 'https://go.microsoft.com/fwlink/p/?LinkId=' + '2124703'
+    curl.exe -sSL --max-time 300 -o $webviewSetup $webviewUrl
+    if (-not (Test-Path $webviewSetup)) {
+        Write-Host 'The bootstrapper could not be downloaded; setup relies on the runtime already being there.' -ForegroundColor Yellow
+    }
+}
+
+if (Test-Path $webviewSetup) {
+    Write-Host ''
+    Write-Host '== Recompiling setup with the runtime bootstrapper' -ForegroundColor Cyan
+    & $iscc "/DMyAppVersion=$version" (Join-Path $PSScriptRoot 'ToneArtStudio.iss')
+    if ($LASTEXITCODE -ne 0) { throw 'ISCC failed to recompile the installer.' }
+}
 
 $setup = Get-ChildItem (Join-Path $root 'dist-installer\*.exe') -ErrorAction SilentlyContinue |
          Select-Object -First 1

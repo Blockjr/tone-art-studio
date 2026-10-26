@@ -60,7 +60,7 @@ SetupLogging=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "asio"; Description: "Register the Tone Art Virtual ASIO driver (recommended)"; GroupDescription: "Audio driver"; Flags: checkedonce
 
 [Files]
