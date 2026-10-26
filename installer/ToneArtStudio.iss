@@ -13,7 +13,7 @@
 ;   ..\assets\brand\tone-art.ico, wizard-large.bmp, wizard-small.bmp
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.5.0"
+  #define MyAppVersion "0.5.1"
 #endif
 
 #define MyAppName "Tone Art Studio"
@@ -32,10 +32,12 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-; The installed desktop app (electron-builder) is what the release publishes,
-; so the native host writes beside it instead of over it.
+; The native host is the ASIO/VST3 engine. It is a different program from the
+; Electron app (dist-installer\ToneArtStudioSetup-*.exe), so it gets its own
+; output folder and its own file name; the two are published side by side and
+; must never be confused for one another.
 OutputDir=..\dist-native
-OutputBaseFilename=ToneArtStudioSetup-{#MyAppVersion}
+OutputBaseFilename=ToneArtStudioHostSetup-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

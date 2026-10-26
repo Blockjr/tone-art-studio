@@ -118,7 +118,7 @@ describe('installer definition', () => {
   });
 
   it('names the setup file after the version', () => {
-    expect(issValue('OutputBaseFilename')).toBe('ToneArtStudioSetup-{#MyAppVersion}');
+    expect(issValue('OutputBaseFilename')).toBe('ToneArtStudioHostSetup-{#MyAppVersion}');
     // A stable AppId is what lets an upgrade replace the previous install.
     // Inno escapes a literal opening brace by doubling it, so the value below
     // expands to {7E0B2B5A-...}.

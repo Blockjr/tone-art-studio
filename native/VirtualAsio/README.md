@@ -66,9 +66,11 @@ ASIO hosts enumerate the second key. Restart any host after installing.
 - Float32 stereo only; no MIDI, no clock sync, no per-channel routing matrix.
 - ~2 blocks of latency in each direction, plus the ring depth.
 - Sample rates 44.1–192 kHz; the rate is fixed while a host is running.
-- **Status: experimental.** The driver could not be compiled or run in the Linux
-  environment this project was built in; it needs a Windows build and a real
-  ASIO host to verify. Keep it off in shipping builds until you have tested it
-  with your hosts.
+- **Status: shipped, not yet exercised.** It is compiled on every Windows build,
+  and `native-windows.yml` fails outright if `HybridVirtualAsio.dll` is missing,
+  so it is present in `ToneArtStudioHostSetup-<version>.exe` and in
+  `ToneArtVirtualAsio-<version>.zip`. It has not been run against a third-party
+  ASIO host in CI - the runner has no audio hardware and no other host - so the
+  first real session with your hosts is the test. Registration needs admin.
 - Browsers cannot use ASIO at all. To capture browser audio, bridge it with
   VoiceMeeter or ASIO Link, or record the interface's loopback in Tone Art Studio.

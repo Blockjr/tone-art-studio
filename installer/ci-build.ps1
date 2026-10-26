@@ -6,6 +6,16 @@
     app (start menu entry, desktop shortcut, uninstaller) that carries its own
     browser engine, so it does not depend on anything already being installed.
 
+    And, from the native pass below:
+
+    dist-native\ToneArtStudioHostSetup-<version>.exe - the native engine: the
+    same interface drawn by a JUCE host with ASIO input/output, VST3 hosting,
+    and the Tone Art Virtual ASIO driver registered at install time.
+
+    Both are published; they are different programs and neither replaces the
+    other. The plain app cannot open ASIO - its audio runs in the browser
+    engine - so the driver is only useful with the native host or another DAW.
+
     The workflow that calls this stays deliberately tiny so the build logic lives
     in the repository with the rest of the project. The installed app is built
     first: it is the deliverable, and failing on it in two minutes is better than
@@ -94,11 +104,36 @@ else {
     Write-Host '== Inno Setup 6 is not on this machine; skipping the native host' -ForegroundColor Yellow
 }
 
-# A public link means the installer can be handed over without a GitHub login;
-# the release created by the workflow keeps it beyond the link's 72 hours.
-$form = 'fileToUpload=@' + $setup.FullName
-$url = curl.exe -sS --max-time 300 -F reqtype=fileupload -F time=72h -F $form https://litterbox.catbox.moe/resources/internals/api.php
-
 Write-Host ''
-Write-Host ('DOWNLOAD-URL: ' + $url)
 Write-Host ('SHA256: ' + (Get-FileHash $setup.FullName -Algorithm SHA256).Hash)
+
+# --------------------------------------------------------------------------
+# 3. The native engine and the virtual ASIO driver.
+#
+# These are separate downloads from the app above: the app cannot use ASIO
+# (its audio runs in the browser engine), while the native host can, and it is
+# what registers the driver. The workflow publishes all of them, so there is
+# nothing to upload from here - the point of this section is that a build which
+# silently skipped the driver is visible in the log.
+# --------------------------------------------------------------------------
+$driverDll = Join-Path $buildDir 'HybridVirtualAsio.dll'
+Write-Host ''
+if (Test-Path $driverDll) {
+    $dll = Get-Item $driverDll
+    Write-Host ("== Virtual ASIO driver: {0} ({1:N0} bytes)" -f $dll.Name, $dll.Length) -ForegroundColor Green
+    Write-Host ('SHA256: ' + (Get-FileHash $dll.FullName -Algorithm SHA256).Hash)
+}
+else {
+    Write-Host '== WARNING: HybridVirtualAsio.dll was not built; the ASIO SDK headers are missing.' -ForegroundColor Yellow
+    Write-Host '   Run: git -C native\build\_deps\juce-src submodule update --init --recursive, then configure again.' -ForegroundColor Yellow
+}
+
+$hostSetup = Get-ChildItem (Join-Path $root 'dist-native\*.exe') -ErrorAction SilentlyContinue |
+             Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($hostSetup) {
+    Write-Host ("== Native engine: {0} ({1:N0} bytes)" -f $hostSetup.Name, $hostSetup.Length) -ForegroundColor Green
+    Write-Host ('SHA256: ' + (Get-FileHash $hostSetup.FullName -Algorithm SHA256).Hash)
+}
+else {
+    Write-Host '== The native engine installer was not produced (Inno Setup missing or the native build failed).' -ForegroundColor Yellow
+}

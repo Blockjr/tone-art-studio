@@ -1,40 +1,69 @@
 # Installing Tone Art Studio
 
-Tone Art Studio ships in two forms:
+A Windows build produces **two different programs**. Neither replaces the other,
+and they have different abilities:
 
-| Form | What it is | Who it is for |
-| --- | --- | --- |
-| **Windows desktop app** | A native window (JUCE + WebView2) with ASIO, a virtual ASIO driver and VST3 hosting, packaged as `ToneArtStudioSetup-0.1.0.exe` | Anyone who wants to record, monitor and host plugins |
-| **Web build** | The same interface served as a web page, no install | Quick listening, editing and the tablet remote |
+| Download | What it is | ASIO | VST3 |
+| --- | --- | --- | --- |
+| `ToneArtStudioSetup-<version>.exe` | The desktop app: Electron shell, audio through Chromium's audio stack | no | no |
+| `ToneArtStudioHostSetup-<version>.exe` | The native engine: the same interface in a JUCE host, plus the virtual ASIO driver registered at install time | **yes** | **yes** |
+| `ToneArtVirtualAsio-<version>.zip` | The driver alone, with `install-virtual-asio.ps1`, for another DAW | — | — |
 
-## Already-built installer
+The plain app cannot open an ASIO driver: browsers have no ASIO support, and this
+build runs its audio in one. If you want ASIO, install the **native engine** (or
+the driver zip and register it for another host). Everything else — the
+arrangement, mixing, MIDI, the tablet remote — is identical in both.
 
-The current build is published from the Windows CI run. The public copy needs
-no GitHub account:
+## Current downloads
 
-| What | Where |
-| --- | --- |
-| Setup program (7.3 MB, no login) | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/ToneArtStudioSetup-0.1.0.exe> |
-| Checksum file | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/SHA256.txt> |
-| Repository copy | [`installer-dist/ToneArtStudioSetup-0.1.0.exe`](installer-dist/ToneArtStudioSetup-0.1.0.exe) |
-| Release asset (sign in first — this repository is private) | <https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe> |
-| Build log | <https://github.com/Blockjr/tone-art-studio/actions/runs/40225917749> |
-
-## Download zips (no login needed)
-
-Each part is a separate zip, and `ToneArtStudio-ALL.zip` holds all four.
+Every file is a release asset of the version in `package.json`; the repository is
+public, so no GitHub account or login is needed:
 
 | What | Where |
 | --- | --- |
-| **Download page** (kit + source, no login) | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/> |
-| **Desktop kit** — installer, tablet remote, setup script | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/ToneArtStudio-2-Desktop-and-Remote-Kit.zip> |
-| **Source code** zip | <https://site-f5f03b496a2a42d89332792b1c0dd1e5.freebuff.page/download/ToneArtStudio-3-Source-Code.zip> |
-| Release asset (public repository) | <https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe> |
-| Raw copy in the repository | <https://raw.githubusercontent.com/Blockjr/tone-art-studio/main/installer-dist/ToneArtStudioSetup-0.1.0.exe> |
+| Desktop app | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/ToneArtStudioSetup-0.5.1.exe> |
+| Native engine + virtual ASIO driver | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/ToneArtStudioHostSetup-0.5.1.exe> |
+| Driver on its own, for another DAW | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/ToneArtVirtualAsio-0.5.1.zip> |
+| Every hash | <https://github.com/Blockjr/tone-art-studio/releases/latest/download/SHA256SUMS.txt> |
 
-The repository is public, so every one of those links works without signing in.
-The zips are also in `deliverables/`, with their SHA-256 values in
-`deliverables/README.txt`.
+## The virtual ASIO driver
+
+ASIO drivers on Windows are user-mode in-process COM servers, not kernel
+drivers, so this needs no signing, no test mode and no reboot — only
+administrator rights to write `HKLM`.
+
+```
+other ASIO app output ──► toStudio ring ──► Tone Art Studio (loopback input)
+Tone Art Studio master ──► toClient ring ──► other ASIO app input
+```
+
+1. Install `ToneArtStudioHostSetup-<version>.exe`. The wizard offers
+   **Register the Tone Art Virtual ASIO driver**, on by default, and it installs
+   to Program Files because registration needs `HKLM`.
+2. Start the studio, open **Studio Rig**, open an audio device, then press
+   **Enable virtual loopback**. The panel reports whether a host has the device
+   open.
+3. In the other ASIO application choose **Tone Art Virtual ASIO**. What it plays
+   arrives in the studio's master; what it records is the studio's master out.
+
+To register it by hand instead:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install-virtual-asio.ps1
+powershell -ExecutionPolicy Bypass -File install-virtual-asio.ps1 -Uninstall
+```
+
+Both run `regsvr32` behind a UAC prompt and verify the two keys afterwards:
+`HKLM\SOFTWARE\Classes\CLSID\{6E1B7A52-...}\InprocServer32` and
+`HKLM\SOFTWARE\ASIO\Tone Art Virtual ASIO`. Restart any ASIO host after
+installing — hosts enumerate the driver list once at startup.
+
+Limits worth knowing before you rely on it: 64-bit hosts only, stereo Float32,
+no MIDI or clock sync, and the sample rate is fixed while a host is running. It
+has been compiled and packaged on every Windows build since 0.5.1, and the build
+fails if the DLL is missing; it has not been exercised against a third-party host
+in CI, so your first session is the real test. `native/VirtualAsio/README.md` has
+the details.
 
 ### The desktop kit — app **and** tablet remote, one download
 
