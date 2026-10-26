@@ -72,6 +72,9 @@ Source: "{#BuildDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\ui\*"; DestDir: "{app}\ui"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BuildDir}\HybridVirtualAsio.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#BuildDir}\install-virtual-asio.ps1"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; Proves the device carries audio rather than merely existing, without a second
+; DAW: it is the second application the bridge normally needs.
+Source: "{#BuildDir}\ToneArtVirtualAsioTest.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; Microsoft's WebView2 bootstrapper. Windows draws the app's entire interface
 ; with that runtime; installing it here is what keeps a PC that never received
 ; it from starting the app into a blank white window.
@@ -93,6 +96,9 @@ Filename: "{tmp}\MicrosoftEdgeWebView2Setup.exe"; Parameters: "/silent /install"
 ; The installer already runs elevated, so the script's own UAC request cannot
 ; prompt a second time.
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-virtual-asio.ps1"""; StatusMsg: "Registering the Virtual ASIO driver..."; Flags: runhidden waituntilterminated; Tasks: asio
+; Off by default, and never in a silent install. It opens a console window that
+; stays up until it is closed, so setup does not wait for a keypress.
+Filename: "{app}\ToneArtVirtualAsioTest.exe"; Parameters: "--pause"; Description: "Test the Virtual ASIO bridge (opens a console window)"; Flags: postinstall nowait unchecked skipifsilent; Tasks: asio
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

@@ -141,6 +141,22 @@ if (Test-Path $driverDll) {
         Write-Host '== Not elevated, so the driver was not registered. To prove it works:' -ForegroundColor Yellow
         Write-Host ('   powershell -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-virtual-asio.ps1') + '"')
     }
+
+    # Registering a device and playing audio through it are different claims. The
+    # bridge between this DLL and the studio is the part a second DAW used to be
+    # needed to test: the self-test *is* the second application, so it runs here
+    # on every build, without admin rights and without a sound card.
+    $selfTest = Join-Path $buildDir 'ToneArtVirtualAsioTest.exe'
+    if (-not (Test-Path $selfTest)) {
+        throw 'ToneArtVirtualAsioTest.exe was not built, so the driver-to-studio bridge went unverified.'
+    }
+
+    Write-Host ''
+    Write-Host '== The virtual ASIO bridge (driver <-> studio)' -ForegroundColor Green
+    & $selfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "The virtual ASIO bridge self-test failed (exit $LASTEXITCODE)."
+    }
 }
 else {
     Write-Host '== WARNING: HybridVirtualAsio.dll was not built; the ASIO SDK headers are missing.' -ForegroundColor Yellow

@@ -29,7 +29,16 @@ cmake --build native/build --config Release --parallel
 ```
 
 Output: `HybridVirtualAsio.dll`, copied next to `Tone Art Studio.exe` together with
-`install-virtual-asio.ps1`.
+`install-virtual-asio.ps1` and `ToneArtVirtualAsioTest.exe`.
+
+This folder also configures on its own, which is how the bridge gets tested in a
+minute instead of building all of JUCE to find out whether the loopback works:
+
+```
+cmake -S native/VirtualAsio -B build-asio -A x64 -DASIO_SDK_DIR=<asio sdk root>
+cmake --build build-asio --config Release
+build-asio/Release/ToneArtVirtualAsioTest.exe
+```
 
 The Steinberg ASIO SDK headers come from JUCE itself: JUCE 9 vendors them in
 `modules/juce_audio_devices/native/asio`, JUCE 8 keeps them in the `asio`
@@ -62,6 +71,40 @@ the class id, which is what a host does when it opens the device), and
 unregisters. `installer/ci-build.ps1` runs it on every Windows build, so a driver
 that cannot register fails the build instead of reaching a release.
 
+## Verify the bridge
+
+Registration proves a DAW can *find* the device. It says nothing about whether
+audio crosses it, and that is the interesting failure: a device with a broken
+bridge opens perfectly, records perfectly, and produces silence.
+
+`ToneArtVirtualAsioTest.exe` is the second application the bridge normally needs.
+It loads the DLL through `DllGetClassObject` - no registration, no administrator
+rights - creates the driver in its own process and then plays the studio's half of
+the shared block against it: a 440 Hz master published into `toClient`, and
+`toStudio` recorded and checked. It asserts the audio is bit-identical in both
+directions, that both halves of every double buffer are wired up, that the
+channels are not swapped, that the bus width, sample rate and block size the
+driver publishes to the studio match what the host asked for, that the transport
+advances by exactly one block per block, and that the counters land exactly where
+they belong - one starvation on the master ring before the first block, because
+the host has not played anything yet, and none afterwards. Then it does the whole
+thing again at a different rate and block size, where stale ring state or an
+un-republished header would show up.
+
+Run it from the folder holding the driver, or point it at one:
+
+```
+ToneArtVirtualAsioTest.exe --pause
+ToneArtVirtualAsioTest.exe C:\path\to\HybridVirtualAsio.dll
+```
+
+Exit code 0 means every check passed. It ships in
+`ToneArtVirtualAsio-<version>.zip` and in `ToneArtStudioHostSetup-<version>.exe`,
+whose setup offers to run it. `.github/workflows/native-asio.yml` runs it on a
+Windows runner for every change in this folder - and compiles only these four
+source files rather than all of JUCE - and `installer/ci-build.ps1` runs it in
+the full Windows build before anything is packaged.
+
 ## Use
 
 1. Start Tone Art Studio and open **Studio Rig**.
@@ -77,13 +120,15 @@ that cannot register fails the build instead of reaching a release.
 - Float32 stereo only; no MIDI, no clock sync, no per-channel routing matrix.
 - ~2 blocks of latency in each direction, plus the ring depth.
 - Sample rates 44.1–192 kHz; the rate is fixed while a host is running.
-- **Status: built, registered and ring-tested in CI; not yet exercised against a
-  real ASIO host.** Every Windows build compiles the DLL, registers it in an
-  elevated session, checks the keys a host reads, creates the COM object and
-  unregisters again, and `native-windows.yml` fails outright if
-  `HybridVirtualAsio.dll` is missing. It ships in
-  `ToneArtStudioHostSetup-<version>.exe` and in
-  `ToneArtVirtualAsio-<version>.zip`. Registration needs admin.
+- **Status: the device, its registration and the whole bridge are tested
+  automatically; not yet driven by a real ASIO host.** Every Windows build
+  compiles the DLL, registers it in an elevated session, checks the keys a host
+  reads, creates the COM object, unregisters, and then runs the bridge self-test
+  above end to end; `native-windows.yml` and `native-asio.yml` fail outright if
+  the DLL or the self-test is missing or the bridge carries nothing. Registration
+  - and so installing the driver - needs admin; the self-test does not. It ships
+  in `ToneArtStudioHostSetup-<version>.exe` and in
+  `ToneArtVirtualAsio-<version>.zip`.
 
   The ring protocol itself is covered on every push by `native/tests/build-tests.sh`
   (`native-core.yml`), which needs no Windows and no audio device: sample-exact
@@ -94,8 +139,9 @@ that cannot register fails the build instead of reaching a release.
   It pins the protocol version, magic value and mask, so a change to the shared
   header cannot quietly break DLLs already installed in other people's hosts.
 
-  What no headless runner can prove is audio crossing a process boundary into a
-  real ASIO application: it has no audio hardware and no second host. Your first
-  session is that test.
+  What neither can prove is how a particular DAW behaves once it drives the
+  device: its own buffer negotiation, its own callback thread and timing, and
+  whether the audio that arrives is the audio you wanted. Your first session is
+  that test.
 - Browsers cannot use ASIO at all. To capture browser audio, bridge it with
   VoiceMeeter or ASIO Link, or record the interface's loopback in Tone Art Studio.

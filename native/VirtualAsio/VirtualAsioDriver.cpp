@@ -456,7 +456,10 @@ void HybridVirtualDriver::publishRate()
     shared->sampleRate.store ((unsigned int) std::lround (hostSampleRate()));
     shared->blockSize.store ((unsigned int) (bufferFrames > 0 ? bufferFrames : kPreferredBufferSize));
     shared->channels.store (hybridasio::channelCount);
-    shared->studioOnline.store (1);
+
+    // studioOnline is the studio's own flag: VirtualAsioPeer sets it when it
+    // attaches and clears it when it detaches. Setting it here used to make the
+    // driver report a studio that was not running.
 }
 
 void HybridVirtualDriver::audioThread()

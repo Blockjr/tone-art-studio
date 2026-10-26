@@ -19,6 +19,7 @@ native/
   VirtualAsio/            the virtual ASIO driver DLL (optional target)
     VirtualAsioDriver.*   IASIO implementation
     DriverModule.cpp      COM class factory + registry registration
+    self-test.cpp         the bridge self-test: the driver, in one process
     install.ps1           elevated register/unregister
     README.md             driver details and limits
   tests/                  ring-protocol tests (no JUCE, no Windows, no audio device)
@@ -104,6 +105,14 @@ VST3 need the desktop build; the web app keeps using Web Audio.
 checks the virtual ASIO driver's shared-memory ring protocol. Neither needs
 Windows, JUCE or an audio device, and `.github/workflows/native-core.yml` runs
 both on every change to the mixer or to `HybridAsioShared.h`.
+
+`native/VirtualAsio/self-test.cpp` builds into `ToneArtVirtualAsioTest.exe` and
+covers the part those two cannot: the driver itself, running. It creates the real
+DLL in its own process - it is the ASIO host *and* the studio - and checks the
+audio in both directions, the buffers, the published bus state and the counters
+across two sessions. `.github/workflows/native-asio.yml` builds just this folder
+with the ASIO SDK headers and runs it on Windows; no JUCE, no registration, no
+elevation, no sound card.
 
 ## Bridge protocol
 
