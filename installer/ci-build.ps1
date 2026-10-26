@@ -122,6 +122,25 @@ if (Test-Path $driverDll) {
     $dll = Get-Item $driverDll
     Write-Host ("== Virtual ASIO driver: {0} ({1:N0} bytes)" -f $dll.Name, $dll.Length) -ForegroundColor Green
     Write-Host ('SHA256: ' + (Get-FileHash $dll.FullName -Algorithm SHA256).Hash)
+
+    # A driver that compiles is not yet a driver a DAW can open. Registering it
+    # writes the two keys a host enumerates, so doing that here - and creating
+    # the COM object once - is what turns 'it built' into evidence. Only an
+    # elevated session can write HKLM; CI always is, and a local run that is not
+    # gets the command to run by hand instead of a failure.
+    $elevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if ($elevated) {
+        & (Join-Path $PSScriptRoot 'test-virtual-asio.ps1') -Dll $dll.FullName
+        if ($LASTEXITCODE -ne 0 -or -not $?) {
+            throw 'The virtual ASIO driver built but would not register.'
+        }
+    }
+    else {
+        Write-Host '== Not elevated, so the driver was not registered. To prove it works:' -ForegroundColor Yellow
+        Write-Host ('   powershell -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-virtual-asio.ps1') + '"')
+    }
 }
 else {
     Write-Host '== WARNING: HybridVirtualAsio.dll was not built; the ASIO SDK headers are missing.' -ForegroundColor Yellow

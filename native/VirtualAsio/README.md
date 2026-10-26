@@ -25,12 +25,16 @@ driver and deliberately out of scope.)
 
 ```
 cmake -S native -B native/build -G "Visual Studio 17 2022" -A x64 -DHYBRID_BUILD_VIRTUAL_ASIO=ON
-git -C native/build/_deps/juce-src submodule update --init --recursive   # ASIO SDK headers
 cmake --build native/build --config Release --parallel
 ```
 
 Output: `HybridVirtualAsio.dll`, copied next to `Tone Art Studio.exe` together with
 `install-virtual-asio.ps1`.
+
+The Steinberg ASIO SDK headers come from JUCE itself: JUCE 9 vendors them in
+`modules/juce_audio_devices/native/asio`, JUCE 8 keeps them in the `asio`
+submodule (run `git -C native/build/_deps/juce-src submodule update --init
+--recursive` after the first configure). `-DASIO_SDK_DIR=<sdk root>` also works.
 
 The DLL uses the static CRT on purpose: a device DLL must not depend on the Visual
 C++ redistributable being present in every host process.
@@ -51,6 +55,13 @@ UAC prompts once. The script calls `regsvr32`, which invokes `DllRegisterServer`
 
 ASIO hosts enumerate the second key. Restart any host after installing.
 
+`installer/test-virtual-asio.ps1` does exactly that and then undoes it: it
+registers the built DLL, asserts both keys, checks that `InprocServer32` points at
+the DLL that was just built, creates the COM object once (`CoCreateInstance` on
+the class id, which is what a host does when it opens the device), and
+unregisters. `installer/ci-build.ps1` runs it on every Windows build, so a driver
+that cannot register fails the build instead of reaching a release.
+
 ## Use
 
 1. Start Tone Art Studio and open **Studio Rig**.
@@ -66,11 +77,14 @@ ASIO hosts enumerate the second key. Restart any host after installing.
 - Float32 stereo only; no MIDI, no clock sync, no per-channel routing matrix.
 - ~2 blocks of latency in each direction, plus the ring depth.
 - Sample rates 44.1–192 kHz; the rate is fixed while a host is running.
-- **Status: shipped, not yet exercised.** It is compiled on every Windows build,
-  and `native-windows.yml` fails outright if `HybridVirtualAsio.dll` is missing,
-  so it is present in `ToneArtStudioHostSetup-<version>.exe` and in
-  `ToneArtVirtualAsio-<version>.zip`. It has not been run against a third-party
-  ASIO host in CI - the runner has no audio hardware and no other host - so the
-  first real session with your hosts is the test. Registration needs admin.
+- **Status: built and registered in CI, audio not yet exercised.** Every Windows
+  build compiles the DLL, registers it in an elevated session, checks the keys a
+  host reads, creates the COM object and unregisters again, and
+  `native-windows.yml` fails outright if `HybridVirtualAsio.dll` is missing. It
+  ships in `ToneArtStudioHostSetup-<version>.exe` and in
+  `ToneArtVirtualAsio-<version>.zip`. What no headless runner can prove is audio
+  moving through the ring buffers to a real host - it has no audio hardware and
+  no second ASIO application - so the first session with your hosts is that test.
+  Registration needs admin.
 - Browsers cannot use ASIO at all. To capture browser audio, bridge it with
   VoiceMeeter or ASIO Link, or record the interface's loopback in Tone Art Studio.
