@@ -68,6 +68,10 @@ Source: "{#BuildDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\ui\*"; DestDir: "{app}\ui"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BuildDir}\HybridVirtualAsio.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#BuildDir}\install-virtual-asio.ps1"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; Microsoft's WebView2 bootstrapper. Windows draws the app's entire interface
+; with that runtime; installing it here is what keeps a PC that never received
+; it from starting the app into a blank white window.
+Source: "{#BuildDir}\MicrosoftEdgeWebView2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 ; The bundled VST3 goes where every DAW looks for one, so the desktop host's
 ; Scan finds it next to third-party plugins.
 Source: "..\native\build\ToneArtGate_artefacts\Release\VST3\Tone Art Gate.vst3\*"; DestDir: "{commoncf}\VST3\Tone Art Gate.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
@@ -79,6 +83,9 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; Runs first: the app cannot draw anything without it. The bootstrapper is
+; silent, needs no reboot, and is skipped when the runtime is already there.
+Filename: "{tmp}\MicrosoftEdgeWebView2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Installing the Microsoft WebView2 runtime..."; Flags: runhidden waituntilterminated skipifdoesntexist; Check: not WebView2Installed
 ; The installer already runs elevated, so the script's own UAC request cannot
 ; prompt a second time.
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-virtual-asio.ps1"""; StatusMsg: "Registering the Virtual ASIO driver..."; Flags: runhidden waituntilterminated; Tasks: asio
@@ -93,36 +100,13 @@ Type: filesandordirs; Name: "{app}\ui"
 [Code]
 const
   WebView2Key = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
-  WebView2Url = 'https://developer.microsoft.com/microsoft-edge/webview2/';
+  WebView2KeyUser = 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
 
 function WebView2Installed(): Boolean;
 var
   Version: String;
 begin
-  Result :=
-    RegQueryStringValue(HKLM, WebView2Key, 'pv', Version) or
-    RegQueryStringValue(HKCU, WebView2Key, 'pv', Version);
-end;
-
-function InitializeSetup(): Boolean;
-var
-  Answer: Integer;
-  ErrorCode: Integer;
-begin
-  Result := True;
-  if not WebView2Installed() then
-  begin
-    Answer := MsgBox(
-      'Tone Art Studio draws its interface with the Microsoft Edge WebView2 runtime, ' +
-      'which is not installed on this PC.' + #13#10#13#10 +
-      'You can download it for free from Microsoft. Setup can open that page now; ' +
-      'install the runtime, then run this installer again.' + #13#10#13#10 +
-      'Open the WebView2 download page?',
-      mbConfirmation, MB_YESNO);
-    if Answer = IDYES then
-    begin
-      ShellExec('open', WebView2Url, '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
-      Result := False;
-    end;
-  end;
+  Result := RegQueryStringValue(HKLM, WebView2Key, 'pv', Version) and (Version <> '0.0.0.0');
+  if not Result then
+    Result := RegQueryStringValue(HKCU, WebView2KeyUser, 'pv', Version) and (Version <> '0.0.0.0');
 end;

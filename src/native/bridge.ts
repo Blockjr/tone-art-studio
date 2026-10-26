@@ -177,6 +177,25 @@ export function isNativeHost(scope: JuceWindow = window as JuceWindow): boolean 
   return typeof scope.__JUCE__?.backend?.emitEvent === 'function';
 }
 
+/**
+ * Tells the desktop host that the interface mounted and painted.
+ *
+ * The host draws a diagnostic panel when this never arrives. That is what turns
+ * an unexplained white window into a message naming the cause: a missing
+ * WebView2 runtime, a ui folder that was not installed, or a page that threw
+ * before it rendered. It is a no-op in a plain browser.
+ */
+export function announceUiReady(scope: JuceWindow = window as JuceWindow): void {
+  const backend = scope.__JUCE__?.backend;
+
+  if (typeof backend?.emitEvent !== 'function') return;
+
+  backend.emitEvent('hybridReady', {
+    viewport: `${scope.innerWidth}x${scope.innerHeight}`,
+    href: scope.location?.href ?? '',
+  });
+}
+
 /** Adapts the JUCE WebView bridge to the small interface the panel needs. */
 export function createJuceTarget(scope: JuceWindow = window as JuceWindow): NativeTarget | null {
   const backend = scope.__JUCE__?.backend;

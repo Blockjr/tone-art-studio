@@ -2,30 +2,88 @@
 
 #include <cstring>
 
+#if JUCE_WINDOWS
+/**
+ * Version of the WebView2 Evergreen runtime, or empty when it is not installed.
+ *
+ * The runtime is what actually draws this app's interface. When it is missing
+ * JUCE cannot create a browser at all, so the window stays a blank white
+ * rectangle with nothing to click. Reading the version up front lets the app
+ * say so instead, and lets setup install it before the first launch.
+ */
+static juce::String findWebView2Version()
+{
+    // Both machine-wide and per-user installs are valid, and 64-bit Windows
+    // keeps the machine-wide key under WOW6432Node.
+    const juce::String keys[]
+    {
+        "SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        "SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    };
+
+    for (const auto& key : keys)
+    {
+        const auto version = juce::WindowsRegistry::getValue (key + "\\pv");
+
+        if (version.isNotEmpty() && version != "0.0.0.0")
+            return version;
+    }
+
+    return {};
+}
+#else
+static juce::String findWebView2Version() { return "not applicable on this platform"; }
+#endif
+
 MainComponent::MainComponent()
 {
     setOpaque (true);
+    startedAt = juce::Time::getMillisecondCounterHiRes();
     locateUi();
+    webView2Version = findWebView2Version();
 
-    auto options = juce::WebBrowserComponent::Options{}
-                       .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
-                       .withNativeIntegrationEnabled()
-                       .withKeepPageLoadedWhenBrowserIsHidden()
-                       .withInitialisationData ("hybridNative", juce::var (true))
-                       .withEventListener ("hybridCommand", [this] (juce::var payload)
-                                           { handleCommand (payload); });
+    writeLog ("Tone Art Studio starting");
+    writeLog ("interface folder: "
+              + (uiDirectory.isDirectory() ? uiDirectory.getFullPathName()
+                                           : juce::String ("not installed")));
+    writeLog ("WebView2 runtime: "
+              + (webView2Version.isEmpty() ? juce::String ("not installed") : webView2Version));
 
-    if (uiDirectory.isDirectory())
-        options = options.withResourceProvider ([this] (const juce::String& path)
-                                                 { return getResource (path); });
-
-    webView = std::make_unique<juce::WebBrowserComponent> (options);
-    addAndMakeVisible (*webView);
-
-    if (uiDirectory.isDirectory())
-        webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
+    if (webView2Version.isEmpty())
+    {
+        uiError = "The Microsoft Edge WebView2 runtime is not installed.";
+        writeLog ("no browser created: the WebView2 runtime is missing");
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
     else
-        webView->goToURL (hostedUiUrl());
+    {
+        auto options = juce::WebBrowserComponent::Options{}
+                           .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
+                           .withNativeIntegrationEnabled()
+                           .withKeepPageLoadedWhenBrowserIsHidden()
+                           .withInitialisationData ("hybridNative", juce::var (true))
+                           .withEventListener ("hybridCommand", [this] (juce::var payload)
+                                               { handleCommand (payload); })
+                           .withEventListener ("hybridReady", [this] (juce::var payload)
+                                               {
+                                                   uiReady = true;
+                                                   writeLog ("interface ready: " + payload.toString());
+                                                   repaint();
+                                               });
+
+        if (uiDirectory.isDirectory())
+            options = options.withResourceProvider ([this] (const juce::String& path)
+                                                    { return getResource (path); });
+
+        webView = std::make_unique<juce::WebBrowserComponent> (options);
+        addAndMakeVisible (*webView);
+        webView->setBounds (getLocalBounds());
+
+        if (uiDirectory.isDirectory())
+            webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
+        else
+            webView->goToURL (hostedUiUrl());
+    }
 
     engine.openDevice ({}, {});
     setSize (1500, 950);
@@ -94,9 +152,20 @@ void MainComponent::paint (juce::Graphics& graphics)
 {
     graphics.fillAll (juce::Colour (0xff08090c));
 
-    // Only visible when the web view has not painted over the window yet, i.e.
-    // during a slow first load. It is deliberately plain so a failure reads as
-    // a message instead of an unexplained white window.
+    // A window that never painted its interface has to say why: a missing
+    // WebView2 runtime, an app installed without its ui folder, or a page that
+    // threw before it rendered. Twelve seconds is long enough that a slow disk
+    // is not mistaken for a failure.
+    const auto waited = juce::Time::getMillisecondCounterHiRes() - startedAt;
+
+    if (webView == nullptr || (! uiReady && waited > 12000.0))
+    {
+        drawProblem (graphics);
+        return;
+    }
+
+    // Only visible while the page is still loading: it is deliberately plain so
+    // that a slow start reads as progress, not as a hang.
     graphics.setColour (juce::Colour (0xff93a0b8));
     graphics.setFont (juce::FontOptions (14.0f));
     graphics.drawText (uiDirectory.isDirectory()
@@ -104,6 +173,66 @@ void MainComponent::paint (juce::Graphics& graphics)
                            : "Loading Tone Art Studio from the web\xe2\x80\xa6",
                        getLocalBounds().reduced (24).removeFromTop (40),
                        juce::Justification::centredTop);
+}
+
+void MainComponent::drawProblem (juce::Graphics& graphics) const
+{
+    auto area = getLocalBounds().reduced (40);
+    const auto missingRuntime = webView2Version.isEmpty();
+
+    graphics.setColour (juce::Colour (0xffe8ecf5));
+    graphics.setFont (juce::FontOptions (19.0f));
+    graphics.drawText (missingRuntime ? "Tone Art Studio needs its drawing engine"
+                                      : "Tone Art Studio could not load its interface",
+                       area.removeFromTop (30), juce::Justification::centredTop);
+
+    graphics.setColour (juce::Colour (0xff93a0b8));
+    graphics.setFont (juce::FontOptions (14.0f));
+    area.removeFromTop (10);
+
+    const auto body = missingRuntime
+        ? juce::String ("Windows draws this app with the Microsoft Edge WebView2 runtime, and it is\n"
+                        "not installed on this PC. It is free, made by Microsoft, and takes about\n"
+                        "a minute to install.\n\n"
+                        "Click anywhere in this window to open the download page, install the\n"
+                        "runtime, then start Tone Art Studio again.")
+        : juce::String ("The page did not finish loading. This is what the app found:\n\n"
+                        "    interface folder: ")
+              + (uiDirectory.isDirectory() ? uiDirectory.getFullPathName()
+                                           : juce::String ("not installed"))
+              + "\n    WebView2 runtime: " + webView2Version
+              + "\n    log: " + logPath
+              + "\n\nClick anywhere in this window to open the WebView2 page. Installing or\n"
+                "repairing that runtime fixes this most of the time.";
+
+    graphics.drawFittedText (body, area.removeFromTop (200), juce::Justification::centredTop, 12);
+}
+
+void MainComponent::writeLog (const juce::String& line)
+{
+    const auto folder = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("Tone Art Studio");
+
+    if (! folder.isDirectory() && ! folder.createDirectory().wasOk())
+        return;
+
+    const auto file = folder.getChildFile ("webview.log");
+    logPath = file.getFullPathName();
+
+    if (file.getSize() > 256 * 1024)
+        file.deleteFile();
+
+    file.appendText (juce::Time::getCurrentTime().toString (true, true) + "  " + line + "\n");
+}
+
+void MainComponent::mouseDown (const juce::MouseEvent&)
+{
+    if (webView != nullptr && uiReady)
+        return;
+
+    writeLog ("opened the WebView2 download page");
+    juce::URL ("https://developer.microsoft.com/microsoft-edge/webview2/")
+        .launchInDefaultBrowser();
 }
 
 void MainComponent::resized()
@@ -122,6 +251,11 @@ void MainComponent::timerCallback()
     // seconds so the Studio Rig panel always receives an initial snapshot.
     if (ticks <= 160 && ticks % 20 == 0)
         sendState();
+
+    // About once a second, so the diagnostic panel appears on its own if the
+    // interface never reports ready.
+    if (! uiReady && ticks % 15 == 0)
+        repaint();
 }
 
 void MainComponent::sendMeters()

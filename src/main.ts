@@ -74,7 +74,7 @@ import {
   type RecordingResult,
 } from './audio/recorder';
 import { clipFromTake, compOverRange, takeName, takesForTrack } from './core/takes';
-import { NativeBridge } from './native/bridge';
+import { NativeBridge, announceUiReady } from './native/bridge';
 import { PreviewPanel } from './ui/preview';
 import { PreviewPlayer } from './audio/preview';
 import { RemoteBridge } from './remote/bridge';
@@ -2377,6 +2377,10 @@ renderBrowser();
 refreshTransport();
 updateProjectTitle();
 scheduleFrame();
+
+// The desktop host draws a diagnostic panel instead of a blank window when this
+// never arrives, so it has to be the last thing the boot does.
+announceUiReady();
 
 if (preferences.scanVst3OnStart && nativeBridge.available) {
   window.setTimeout(() => {
