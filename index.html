@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tone Art Studio — Browser DAW</title>
+  <meta name="description" content="Tone Art Studio — a browser and desktop DAW with a real console, MIDI instruments and a VST3 host." />
+  <meta name="theme-color" content="#08090c" />
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+</head>
+<body>
+  <div class="app" id="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark"><img src="/logo.svg" alt="" width="27" height="27" /></span>
+        <div class="brand-text">
+          <span class="brand-name">Tone Art</span>
+          <em>Studio v0.1</em>
+        </div>
+      </div>
+
+      <div class="project-chip" id="project-chip">
+        <span class="project-dirty" id="project-dirty" title="Unsaved changes"></span>
+        <button class="project-name" id="project-name" title="Rename project">Tone Art Demo</button>
+      </div>
+
+      <div class="transport">
+        <button id="btn-rewind" class="tbtn" title="Return to project start (Home)">⏮</button>
+        <button id="btn-last" class="tbtn" title="Return to last playback start (Shift+R)">↩</button>
+        <button id="btn-play" class="tbtn tbtn-play" title="Play / Pause (Space)">▶</button>
+        <button id="btn-record" class="tbtn tbtn-record" title="Record onto the armed audio track (R)">●</button>
+        <button id="btn-stop" class="tbtn" title="Stop (Space)">■</button>
+        <span class="tsep"></span>
+        <button id="btn-loop" class="tbtn tbtn-toggle" title="Loop (L)">⟲</button>
+        <button id="btn-metro" class="tbtn tbtn-toggle" title="Metronome (K)">⧗</button>
+        <button id="btn-metro-menu" class="tbtn tbtn-caret" title="Metronome and count-in settings" aria-haspopup="dialog" aria-expanded="false">▾</button>
+        <button id="btn-countin" class="tbtn tbtn-toggle tbtn-countin" title="Count-in before playback (Shift+K)">◷</button>
+        <span class="tsep"></span>
+        <div class="tempo" title="Tempo">
+          <input id="tempo-input" type="number" min="40" max="260" step="1" value="124" />
+          <span>BPM</span>
+        </div>
+        <button id="btn-tap" class="tbtn tbtn-sm" title="Tap tempo (T)">TAP</button>
+        <div class="pos" id="pos" role="button" tabindex="0" title="Click to type a location: bar.beat.sixteenth">
+          <span id="pos-bars" class="pos-main">1.1.1</span>
+          <span id="pos-time" class="pos-sub">00:00.000</span>
+        </div>
+      </div>
+
+      <div class="topright">
+        <div class="master-meter" title="Master output">
+          <canvas id="master-meter"></canvas>
+          <span id="master-db">-∞</span>
+        </div>
+        <button id="btn-undo" class="tbtn tbtn-sm" title="Undo (Ctrl+Z)">Undo</button>
+        <button id="btn-redo" class="tbtn tbtn-sm" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        <button id="btn-assistant" class="tbtn tbtn-sm tbtn-accent" title="Sage — AI mix, whole-mix master, session checks and help (Shift+M)">Sage AI</button>
+        <button id="btn-help" class="tbtn tbtn-sm tbtn-round" title="Help and shortcuts (?)" aria-label="Help">?</button>
+        <button id="btn-takes" class="tbtn tbtn-sm" title="Record, takes and comping">Takes</button>
+        <button id="btn-remote" class="tbtn tbtn-sm" title="Control this session from a tablet">Remote</button>
+        <button id="btn-rig" class="tbtn tbtn-sm" title="Audio device, virtual ASIO driver and VST3 plugins">Studio Rig</button>
+        <button id="btn-preview" class="tbtn tbtn-sm" title="Audio preview and sample audition">Preview</button>
+        <button id="btn-export" class="tbtn tbtn-accent" title="Render mixdown to WAV">Export WAV</button>
+      </div>
+    </header>
+
+    <main class="main" id="main">
+
+      <aside class="panel browser" id="browser">
+        <div class="panel-head">
+          <span>Browser</span>
+          <span class="panel-hint">⌘/Ctrl+scroll to zoom</span>
+        </div>
+        <div class="browser-tabs" id="browser-tabs" role="tablist" aria-label="Browser views">
+          <button class="browser-tab is-on" id="browser-tab-library" type="button" role="tab" aria-selected="true" aria-controls="browser-body" data-tab="library">Library</button>
+          <button class="browser-tab" id="browser-tab-files" type="button" role="tab" aria-selected="false" aria-controls="browser-files" data-tab="files">Files</button>
+        </div>
+        <div class="browser-body" id="browser-body"></div>
+        <div class="browser-body browser-files" id="browser-files" hidden></div>
+        <div class="browser-foot">
+          <button id="btn-add-midi" class="btn-ghost">+ MIDI Track</button>
+          <button id="btn-add-audio" class="btn-ghost">+ Audio Track</button>
+          <label class="btn-ghost file-btn">
+            Import Audio
+            <input id="file-input" type="file" accept="audio/*" hidden />
+          </label>
+        </div>
+      </aside>
+
+      <div class="splitter" id="split-left" title="Drag to resize browser"></div>
+
+      <section class="arrange">
+        <div class="arrange-toolbar">
+          <span class="toolbar-title">Arrangement</span>
+          <span class="toolbar-meta" id="song-meta">—</span>
+          <div class="spacer"></div>
+          <label class="mini" title="Short fades at every audio clip boundary">
+            <input id="chk-auto-fade" type="checkbox" checked />
+            Auto fade
+          </label>
+          <label class="mini">Snap
+            <select id="snap-select">
+              <option value="0">Off</option>
+              <option value="0.25" selected>1/16</option>
+              <option value="0.5">1/8</option>
+              <option value="1">1/4</option>
+              <option value="4">Bar</option>
+            </select>
+          </label>
+          <label class="mini" title="How the arrangement follows the playhead during playback (F)">Follow
+            <select id="follow-select" aria-label="Playhead follow mode">
+              <option value="page">Page</option>
+              <option value="continuous">Scroll</option>
+              <option value="center">Center</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <button id="btn-notes" class="tbtn tbtn-sm" title="Edit the notes of the selected MIDI clip (Enter)">Notes</button>
+          <button id="btn-bounce" class="tbtn tbtn-sm" title="Print the selected clip — or the selected track — to an audio clip">Bounce</button>
+          <button id="btn-split" class="tbtn tbtn-sm" title="Split selected clip at playhead (S)">Split</button>
+          <button id="btn-duplicate" class="tbtn tbtn-sm" title="Duplicate clip (D)">Duplicate</button>
+          <button id="btn-delete-clip" class="tbtn tbtn-sm" title="Delete clip (Del)">Delete</button>
+          <span class="tsep"></span>
+          <button id="btn-zoom-out" class="tbtn tbtn-sm" title="Zoom out (−)">−</button>
+          <button id="btn-zoom-in" class="tbtn tbtn-sm" title="Zoom in (+)">+</button>
+        </div>
+
+        <div class="clip-bar" id="clip-bar" hidden aria-label="Audio clip controls">
+          <span class="clip-bar-label">Clip</span>
+          <span class="clip-bar-name" id="clip-name">—</span>
+          <label class="mini">Gain
+            <input id="clip-gain" type="range" min="-24" max="12" step="0.5" value="0" aria-label="Clip gain" />
+            <span class="clip-bar-value" id="clip-gain-db">0.0 dB</span>
+          </label>
+          <label class="mini">Pitch
+            <input id="clip-pitch" type="range" min="-12" max="12" step="1" value="0" aria-label="Clip pitch in semitones" />
+            <span class="clip-bar-value" id="clip-pitch-st">0 st</span>
+          </label>
+          <label class="mini" title="Time-stretch the audio to the clip length; drag the clip edge to warp">
+            <input id="clip-stretch" type="checkbox" />
+            Stretch
+          </label>
+          <button id="btn-normalize" class="tbtn tbtn-sm" title="Set clip gain so the loudest peak sits at −1 dBFS (N)">Normalize</button>
+          <button id="btn-reverse-clip" class="tbtn tbtn-sm" title="Play the clip backwards, non-destructively (R)">Reverse</button>
+          <button id="btn-quantize" class="tbtn tbtn-sm" title="Slice at transients, then drag the slices onto the grid (time-stretched)">Slice to grid</button>
+          <span class="clip-bar-hint" id="clip-bar-hint">Shift+drag the ruler to select a range · Space plays it</span>
+        </div>
+
+        <canvas id="ruler-canvas" class="ruler-canvas"></canvas>
+
+        <div class="arrange-body" id="arrange-body">
+          <div class="track-headers" id="track-headers"></div>
+          <div class="lanes" id="lanes">
+            <canvas id="timeline-canvas"></canvas>
+          </div>
+        </div>
+
+        <div class="rail" id="timeline-rail" hidden>
+          <span class="rail-gutter" aria-hidden="true">Scroll</span>
+          <div class="rail-track" id="timeline-rail-track" role="scrollbar" aria-label="Arrangement scroll" aria-controls="timeline-canvas" aria-orientation="horizontal">
+            <div class="rail-thumb" id="timeline-rail-thumb"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="splitter" id="split-right" title="Drag to resize device rack"></div>
+
+      <aside class="panel rack" id="rack">
+        <div class="panel-head">
+          <span>Device Rack</span>
+          <span class="panel-hint" id="rack-track-name">—</span>
+        </div>
+        <div class="rack-body" id="rack-body"></div>
+      </aside>
+    </main>
+
+    <div class="splitter splitter-h" id="split-mixer" title="Drag to resize mixer"></div>
+
+    <section class="preview" id="preview" aria-label="Audio preview"></section>
+
+    <section class="mixer" id="mixer">
+      <div class="mixer-head">
+        <span class="mixer-screw" aria-hidden="true"></span>
+        <span class="mixer-plate">
+          <span class="mixer-brand">Tone Art</span>
+          <span class="mixer-series">TA·32</span>
+        </span>
+        <span class="mixer-model">Inline console · 32 channel</span>
+        <span class="panel-hint">faders · pans · sends · inserts · scopes</span>
+        <div class="spacer"></div>
+        <span class="mixer-lamp" title="Console online">online</span>
+        <button id="btn-toggle-mixer" class="tbtn tbtn-sm" title="Collapse mixer">▾</button>
+        <span class="mixer-screw" aria-hidden="true"></span>
+      </div>
+      <div class="mixer-strips" id="mixer-strips"></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

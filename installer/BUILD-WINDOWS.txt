@@ -1,0 +1,69 @@
+MY STUDIO - WINDOWS INSTALLER KIT
+=====================================
+
+This folder builds ToneArtStudioSetup-0.1.0.exe: the Windows installer, with
+the logo artwork, the application icon and the Virtual ASIO driver built in.
+
+The installer executable itself is not in this zip, because it can only be
+compiled on Windows (Inno Setup + MSVC). One command produces it; see below.
+
+
+WHAT IS IN HERE
+  installer/        ToneArtStudio.iss (Inno Setup script) + build-installer.ps1
+  assets/brand/     logo SVG, .ico, PNG sizes 16-1024, wizard artwork
+  native/           JUCE host (ASIO, VST3, WebView2) and the virtual ASIO driver
+  dist/             the web UI, already built - the installer ships this
+  src/, public/     UI sources, if you want to change something first
+
+
+INSTALL THESE ONCE
+  - Node.js 20+                      https://nodejs.org
+  - Visual Studio 2022 with the "Desktop development with C++" workload
+  - CMake 3.25+                      https://cmake.org/download ("Add to PATH")
+  - Inno Setup 6.3+                  https://jrsoftware.org/isdl.php
+
+  git must be on PATH too (CMake uses it to fetch JUCE).
+
+
+BUILD THE INSTALLER
+  Open PowerShell in this folder:
+
+      powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 -SkipUi
+
+  -SkipUi reuses the prebuilt dist/ folder. Leave it out to rebuild the UI
+  from src/ (that needs `npm ci` once).
+
+  The script configures CMake, fetches JUCE 9.0.4, pulls the ASIO SDK
+  submodule, compiles Release, then runs ISCC. It prints the path it wrote:
+
+      dist-installer\ToneArtStudioSetup-0.1.0.exe
+
+  The first run downloads JUCE (about 150 MB) and compiles for 10-20 minutes.
+  Rebuilds after that take a couple of minutes.
+
+
+WHAT THE INSTALLER DOES
+  - installs to C:\Program Files\Tone Art Studio (admin required: the virtual
+    ASIO driver registers itself in HKLM)
+  - Start Menu entry, optional desktop shortcut - both use the logo icon
+  - copies the web UI to ui\ and the virtual ASIO driver next to the exe
+  - checks for the Microsoft Edge WebView2 runtime and offers the download
+    page if it is missing
+  - optional task: register "Tone Art Virtual ASIO", so any ASIO host can
+    pick it as a device
+  - uninstall de-registers the driver and removes the app folder; your
+    .hstudio projects and VST3 plugins are never touched
+
+
+NOTES
+  - The setup is unsigned, so the first launch shows SmartScreen's "Windows
+    protected your PC": More info -> Run anyway. A code-signing certificate
+    removes that prompt.
+  - No Inno Setup? The portable build still runs from
+    native\build\HybridStudio_artefacts\Release\ (Tone Art Studio.exe + ui\).
+  - GitHub Actions builds the same installer for you: the workflow
+    .github/workflows/native-windows.yml uploads both the portable folder and
+    ToneArtStudioSetup-<version>.exe as downloadable artifacts.
+
+For a step-by-step guide covering the toolchain, both install paths, the portable
+build, uninstall and troubleshooting, see ..\INSTALL.md.

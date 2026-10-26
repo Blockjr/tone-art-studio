@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tone Art Studio (Pro Tools x Ableton x Fender)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .daw-bg { background-color: #0d0e11; }
+        .panel-bg { background-color: #15171e; border-color: #262936; }
+        .clip-slot { background: linear-gradient(145deg, #1b1e26, #12141a); }
+        .clip-slot.is-playing {
+            background: linear-gradient(145deg, #04231c, #0a1a16);
+            border-color: #047857;
+            box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
+        }
+        .clip-slot.is-playing .clip-title { color: #34d399; }
+        .keys-active { box-shadow: inset 0 0 0 2px #f43f5e; background-color: #fecdd3 !important; }
+        input[type="range"] { accent-color: #f43f5e; height: 14px; cursor: pointer; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: #262936; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+    </style>
+</head>
+<body class="daw-bg text-zinc-300 font-sans h-screen flex flex-col select-none overflow-hidden">
+
+    <!-- Global Application Header -->
+    <header class="panel-bg border-b px-6 py-3 flex flex-wrap items-center justify-between gap-4 shadow-lg z-50">
+        <div class="flex items-center space-x-6">
+            <span class="text-lg font-black tracking-tighter text-white">TONE ART<span class="text-rose-500 font-light"> STUDIO</span></span>
+            <div class="flex space-x-2 text-[10px] uppercase font-bold tracking-widest">
+                <span class="text-blue-400 px-2 py-0.5 bg-blue-950/40 rounded border border-blue-900/60">Pro Tools Linear</span>
+                <span class="text-amber-400 px-2 py-0.5 bg-amber-950/40 rounded border border-amber-900/60">Ableton Live Matrix</span>
+                <span class="text-rose-400 px-2 py-0.5 bg-rose-950/40 rounded border border-rose-900/60">Fender Amp DSP</span>
+            </div>
+        </div>
+
+        <!-- Latency Diagnostic Output -->
+        <div class="bg-zinc-900 px-4 py-1.5 rounded border border-zinc-800 font-mono text-xs text-emerald-400 flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+            <span id="diagnostic-txt">ENGINE STATUS: LIVE &amp; READY | LATENCY: 2.1ms</span>
+        </div>
+
+        <!-- Master Clock Transport Matrix -->
+        <div class="flex items-center space-x-4 bg-zinc-900 px-6 py-1.5 rounded-lg border border-zinc-800">
+            <button id="master-record" title="Record take" aria-label="Record take" class="w-4 h-4 rounded-full bg-rose-600 hover:bg-rose-500 transition-all shadow-[0_0_8px_#e11d48]"></button>
+            <button id="master-play" class="text-xs text-zinc-400 hover:text-white font-bold transition-colors">PLAY</button>
+            <button id="master-stop" class="text-xs text-zinc-400 hover:text-white font-bold transition-colors">STOP</button>
+            <div class="h-4 w-[1px] bg-zinc-800"></div>
+            <div class="flex flex-col items-end leading-none">
+                <span id="smpte-clock" class="font-mono text-rose-500 tracking-widest text-sm">00:00:00.00</span>
+                <span id="bar-beat" class="font-mono text-[9px] text-zinc-500 mt-0.5">BAR 1.1</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Workspace Distribution Grid -->
+    <main class="flex-1 flex overflow-hidden">
+
+        <!-- Left Sidebar: Ableton Live Clip Session Matrix -->
+        <section class="w-72 border-r border-zinc-800 flex flex-col p-4 bg-zinc-950/40 space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xs uppercase font-extrabold tracking-widest text-zinc-400">Ableton Live Matrix</h2>
+                <span class="text-[10px] font-mono bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">Quantize: 1/16</span>
+            </div>
+
+            <!-- Clip Group Matrix Grid -->
+            <div class="grid grid-cols-2 gap-2 content-start flex-1 overflow-y-auto">
+                <button type="button" data-clip="drums" class="clip-slot group text-left p-3 rounded border border-zinc-800 flex flex-col justify-between h-24 hover:border-zinc-700 transition-all cursor-pointer">
+                    <span class="clip-title text-xs font-semibold text-zinc-400 group-hover:text-amber-400">🥁 Drum Loop A</span>
+                    <span class="text-[10px] font-mono text-zinc-600">124 BPM</span>
+                </button>
+                <button type="button" data-clip="bass" class="clip-slot group text-left p-3 rounded border border-zinc-800 flex flex-col justify-between h-24 hover:border-zinc-700 transition-all cursor-pointer">
+                    <span class="clip-title text-xs font-semibold text-zinc-400 group-hover:text-amber-400">🎹 Sub Bass Line</span>
+                    <span class="text-[10px] font-mono text-zinc-600">MIDI Ch 1</span>
+                </button>
+                <button type="button" data-clip="gtr" class="clip-slot group text-left p-3 rounded border border-zinc-800 flex flex-col justify-between h-24 hover:border-zinc-700 transition-all cursor-pointer">
+                    <span class="clip-title text-xs font-semibold text-zinc-400 group-hover:text-amber-400">🎸 Strata DI Riff</span>
+                    <span class="text-[10px] font-mono text-zinc-600">Audio Ch 1</span>
+                </button>
+                <button type="button" data-clip="keys" class="clip-slot group text-left p-3 rounded border border-zinc-800 flex flex-col justify-between h-24 hover:border-zinc-700 transition-all cursor-pointer">
+                    <span class="clip-title text-xs font-semibold text-zinc-400 group-hover:text-amber-400">🎛 Rhodes Chords</span>
+                    <span class="text-[10px] font-mono text-zinc-600">MIDI Ch 2</span>
+                </button>
+            </div>
+
+            <div class="space-y-2">
+                <button id="stop-clips" class="w-full text-[10px] font-bold uppercase tracking-widest bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:text-white text-zinc-400 rounded py-2 transition-colors">■ Stop All Clips</button>
+                <div class="font-mono text-[9px] text-zinc-600 flex justify-between">
+                    <span>SESSION</span>
+                    <span id="session-status">IDLE</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Center: Pro Tools Linear Arrange Window -->
+        <section class="flex-1 flex flex-col border-r border-zinc-800 min-w-0">
+            <div class="h-8 border-b border-zinc-800 bg-zinc-900/20 flex items-center font-mono text-[10px] text-zinc-500 px-4">
+                <div class="w-1/4 border-r border-zinc-800/40">1.1.00 Bars</div>
+                <div class="w-1/4 border-r border-zinc-800/40">5.1.00 Bars</div>
+                <div class="w-1/4 border-r border-zinc-800/40">9.1.00 Bars</div>
+            </div>
+
+            <!-- Precision Arrangement Canvas -->
+            <div class="flex-1 p-4 overflow-y-auto space-y-3 bg-zinc-950/20 relative">
+                <div id="playhead" class="absolute top-0 bottom-0 w-px bg-rose-500/70 pointer-events-none z-20" style="left: 0;"></div>
+
+                <!-- Track Strip 1: Audio Track -->
+                <div class="h-28 bg-zinc-900/40 rounded border border-zinc-800 relative overflow-hidden flex flex-col justify-between p-3">
+                    <div class="absolute inset-0 pointer-events-none opacity-40 flex items-center">
+                        <canvas id="audio-waveform-canvas" class="w-full h-20"></canvas>
+                    </div>
+                    <div class="flex justify-between items-start z-10">
+                        <div class="flex items-center space-x-3">
+                            <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span>
+                            <div>
+                                <h3 class="text-xs font-bold text-white tracking-wide">AUDIO TRACK 1: Live Stream</h3>
+                                <p class="text-[10px] text-zinc-500 font-mono">HW Input 1 -&gt; Master Bus</p>
+                            </div>
+                        </div>
+                        <div class="flex space-x-1.5">
+                            <button id="btn-hw-connect" class="text-[10px] bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded font-bold hover:bg-zinc-700 transition-colors">🎤 ACTIVATE INTERFACE</button>
+                            <button id="track-arm" class="text-[10px] bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded font-bold text-zinc-400 transition-colors">● ARM</button>
+                        </div>
+                    </div>
+                    <div class="flex space-x-4 text-[10px] font-mono text-zinc-500 z-10">
+                        <span>Mute: <input type="checkbox"></span>
+                        <span>Solo: <input type="checkbox"></span>
+                        <span id="rec-status" class="text-zinc-600 font-bold">● STANDBY</span>
+                    </div>
+                </div>
+
+                <!-- Track Strip 2: Polyphonic MIDI Instrument -->
+                <div class="h-28 bg-zinc-900/40 rounded border border-zinc-800 relative overflow-hidden flex flex-col justify-between p-3">
+                    <div class="flex justify-between items-start z-10">
+                        <div class="flex items-center space-x-3">
+                            <span class="w-1.5 h-6 bg-amber-500 rounded-full"></span>
+                            <div>
+                                <h3 class="text-xs font-bold text-white tracking-wide">MIDI TRACK 2: Polyphonic Rack</h3>
+                                <p class="text-[10px] text-zinc-500 font-mono">Fender Rhodes Mk I Engine</p>
+                            </div>
+                        </div>
+                        <span class="text-[9px] font-mono text-zinc-600">KEYS A S D F G H J</span>
+                    </div>
+
+                    <!-- Performance Keyboard Keybed -->
+                    <div class="grid grid-cols-7 gap-1 h-12 z-10 max-w-xs">
+                        <button type="button" data-freq="261.63" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">C</button>
+                        <button type="button" data-freq="293.66" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">D</button>
+                        <button type="button" data-freq="329.63" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">E</button>
+                        <button type="button" data-freq="349.23" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">F</button>
+                        <button type="button" data-freq="392.00" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">G</button>
+                        <button type="button" data-freq="440.00" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">A</button>
+                        <button type="button" data-freq="493.88" class="key bg-white text-zinc-950 font-bold font-mono text-[10px] rounded flex items-end justify-center pb-1 hover:bg-rose-50 transition-colors">B</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Side: Fender FX Staging -->
+        <section class="w-80 panel-bg border-l flex flex-col overflow-y-auto p-4 space-y-4">
+            <h2 class="text-xs uppercase font-extrabold tracking-widest text-zinc-400">Fender Guitar FX Rack</h2>
+
+            <div class="bg-zinc-900 p-3 rounded-lg border border-zinc-800 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-400 uppercase tracking-wider">’65 Twin Reverb DSP</span>
+                    <span class="text-[9px] font-mono text-emerald-500">ACTIVE</span>
+                </div>
+
+                <label class="block space-y-1">
+                    <span class="flex justify-between text-[10px] font-mono text-zinc-500">
+                        <span>DRIVE GAIN</span><span id="gain-val" class="text-zinc-300">0.35</span>
+                    </span>
+                    <input id="param-gain" type="range" min="0" max="1" step="0.01" value="0.35" class="w-full">
+                </label>
+
+                <label class="block space-y-1">
+                    <span class="flex justify-between text-[10px] font-mono text-zinc-500">
+                        <span>BRIGHT EQ</span><span id="cutoff-val" class="text-zinc-300">4.2 kHz</span>
+                    </span>
+                    <input id="param-cutoff" type="range" min="400" max="12000" step="50" value="4200" class="w-full">
+                </label>
+
+                <label class="block space-y-1">
+                    <span class="flex justify-between text-[10px] font-mono text-zinc-500">
+                        <span>OUTPUT</span><span id="output-val" class="text-zinc-300">0.80</span>
+                    </span>
+                    <input id="param-output" type="range" min="0" max="1" step="0.01" value="0.8" class="w-full">
+                </label>
+
+                <p class="text-[9px] text-amber-500/70 leading-snug">⚠ Live monitoring is on — use headphones to avoid feedback.</p>
+            </div>
+
+            <div class="bg-zinc-900 p-3 rounded-lg border border-zinc-800 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-400 uppercase tracking-wider">Mastering Controls</span>
+                    <span class="text-[9px] font-mono text-zinc-500">BRICKWALL</span>
+                </div>
+
+                <div class="flex items-center justify-between font-mono text-[10px] text-zinc-500">
+                    <span>CEILING</span><span class="text-emerald-400">-0.2 dB</span>
+                </div>
+                <div class="flex items-center justify-between font-mono text-[10px] text-zinc-500">
+                    <span>RATIO</span><span class="text-zinc-300">20:1</span>
+                </div>
+
+                <div>
+                    <div class="flex justify-between font-mono text-[10px] text-zinc-500 mb-1">
+                        <span>OUTPUT PEAK</span><span id="peak-readout" class="text-zinc-300">-∞ dB</span>
+                    </div>
+                    <div class="h-2 bg-zinc-950 rounded border border-zinc-800 overflow-hidden">
+                        <div id="peak-bar" class="h-full w-0 bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-zinc-900 p-3 rounded-lg border border-zinc-800 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-400 uppercase tracking-wider">Takes</span>
+                    <span id="take-count" class="text-[9px] font-mono text-zinc-600">0 RECORDED</span>
+                </div>
+                <div id="takes" class="space-y-2">
+                    <p class="text-[10px] font-mono text-zinc-600 leading-snug">Arm a track, then hit ● in the transport to capture the master bus.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+    'use strict';
+
+    /* ------------------------------------------------------------------ *
+     *  DOM handles
+     * ------------------------------------------------------------------ */
+    const $ = (id) => document.getElementById(id);
+
+    const btnConnect = $('btn-hw-connect');
+    const badgeTxt = $('diagnostic-txt');
+    const recStatus = $('rec-status');
+    const btnGlobalRec = $('master-record');
+    const btnPlay = $('master-play');
+    const btnStop = $('master-stop');
+    const btnArm = $('track-arm');
+    const btnStopClips = $('stop-clips');
+    const clockTxt = $('smpte-clock');
+    const barTxt = $('bar-beat');
+    const sessionTxt = $('session-status');
+    const canvas = $('audio-waveform-canvas');
+    const canvasCtx = canvas.getContext('2d');
+    const playhead = $('playhead');
+    const peakTxt = $('peak-readout');
+    const peakBar = $('peak-bar');
+    const takesList = $('takes');
+    const takeCountTxt = $('take-count');
+    const gainVal = $('gain-val');
+    const cutoffVal = $('cutoff-val');
+    const outputVal = $('output-val');
+    const sliderDrive = $('param-gain');
+    const sliderCutoff = $('param-cutoff');
+    const sliderOutput = $('param-output');
+
+    /* ------------------------------------------------------------------ *
+     *  Engine state
+     * ------------------------------------------------------------------ */
+    const BPM = 124;
+    const BAR_SECONDS = (60 / BPM) * 4;
+    const STEP_MS = 60000 / BPM / 4;          // one 1/16 note
+    const IDLE_BADGE = 'ENGINE STATUS: LIVE & READY | LATENCY: 2.1ms';
+    const LOOKAHEAD_BARS = 12;                // bars shown across the arrange window
+
+    let audioCtx = null;
+    let ampDriveNode = null;
+    let ampDriveShaper = null;
+    let ampToneNode = null;
+    let brickwallLimiterNode = null;
+    let masterGainNode = null;
+    let masterAnalyser = null;
+    let masterData = null;
+    let micAnalyser = null;
+    let micData = null;
+    let noiseBuffer = null;
+
+    let rawMicStream = null;
+    let streamSource = null;
+    let micConnected = false;
+
+    let isTrackArmed = false;
+    let isTransportPlaying = false;
+    let transportBase = 0;          // seconds already elapsed before the current segment
+    let transportStartedAt = 0;     // performance.now() when the segment began
+    let isGlobalRecording = false;
+
+    let seqTimer = null;
+    let seqStep = 0;
+
+    let recorder = null;
+    let recDestination = null;
+    let recChunks = [];
+    let takeCount = 0;
+
+    const clips = {
+        drums: { playing: false },
+        bass:  { playing: false },
+        gtr:   { playing: false },
+        keys:  { playing: false }
+    };
+
+    /* ------------------------------------------------------------------ *
+     *  Helpers
+     * ------------------------------------------------------------------ */
+    function setBadge(msg) {
+        badgeTxt.textContent = msg;
+    }
+
+    const pad2 = (n) => String(n).padStart(2, '0');
+
+    function formatSMPTE(seconds) {
+        const clamped = Math.max(0, seconds);
+        const h = Math.floor(clamped / 3600);
+        const m = Math.floor((clamped % 3600) / 60);
+        const s = Math.floor(clamped % 60);
+        const cs = Math.floor((clamped % 1) * 100);
+        return `${pad2(h)}:${pad2(m)}:${pad2(s)}.${pad2(cs)}`;
+    }
+
+    function transportSeconds() {
+        if (!isTransportPlaying) return transportBase;
+        return transportBase + (performance.now() - transportStartedAt) / 1000;
+    }
+
+    function makeDistortionCurve(amount) {
+        const n = 1024;
+        const curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            curve[i] = Math.tanh(x * amount) / Math.tanh(amount);
+        }
+        return curve;
+    }
+
+    function getNoiseBuffer() {
+        if (noiseBuffer) return noiseBuffer;
+        const frames = Math.floor(audioCtx.sampleRate * 1);
+        noiseBuffer = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+        return noiseBuffer;
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Audio graph
+     * ------------------------------------------------------------------ */
+    async function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Mic / instrument input -> drive -> soft clip -> bright EQ -> limiter -> master
+            ampDriveNode = audioCtx.createGain();
+            ampDriveShaper = audioCtx.createWaveShaper();
+            ampToneNode = audioCtx.createBiquadFilter();
+            brickwallLimiterNode = audioCtx.createDynamicsCompressor();
+            masterGainNode = audioCtx.createGain();
+
+            ampDriveNode.gain.value = Number(sliderDrive.value);
+
+            ampDriveShaper.curve = makeDistortionCurve(5);
+            ampDriveShaper.oversample = '4x';
+
+            ampToneNode.type = 'lowpass';
+            ampToneNode.frequency.value = Number(sliderCutoff.value);
+            ampToneNode.Q.value = 0.8;
+
+            brickwallLimiterNode.threshold.value = -1.2;
+            brickwallLimiterNode.knee.value = 0;
+            brickwallLimiterNode.ratio.value = 20;
+            brickwallLimiterNode.attack.value = 0.002;
+            brickwallLimiterNode.release.value = 0.12;
+
+            masterGainNode.gain.value = Number(sliderOutput.value);
+
+            ampDriveNode.connect(ampDriveShaper);
+            ampDriveShaper.connect(ampToneNode);
+            ampToneNode.connect(brickwallLimiterNode);
+            brickwallLimiterNode.connect(masterGainNode);
+            masterGainNode.connect(audioCtx.destination);
+
+            masterAnalyser = audioCtx.createAnalyser();
+            masterAnalyser.fftSize = 1024;
+            masterAnalyser.smoothingTimeConstant = 0.3;
+            masterData = new Uint8Array(masterAnalyser.fftSize);
+            masterGainNode.connect(masterAnalyser);
+
+            micAnalyser = audioCtx.createAnalyser();
+            micAnalyser.fftSize = 2048;
+            micData = new Uint8Array(micAnalyser.fftSize);
+            micAnalyser.connect(ampDriveNode);
+
+            sliderDrive.addEventListener('input', (e) => {
+                const v = Number(e.target.value);
+                gainVal.textContent = v.toFixed(2);
+                if (ampDriveNode) ampDriveNode.gain.setTargetAtTime(v, audioCtx.currentTime, 0.01);
+            });
+
+            sliderCutoff.addEventListener('input', (e) => {
+                const v = Number(e.target.value);
+                cutoffVal.textContent = (v / 1000).toFixed(1) + ' kHz';
+                if (ampToneNode) ampToneNode.frequency.setTargetAtTime(v, audioCtx.currentTime, 0.01);
+            });
+
+            sliderOutput.addEventListener('input', (e) => {
+                const v = Number(e.target.value);
+                outputVal.textContent = v.toFixed(2);
+                if (masterGainNode) masterGainNode.gain.setTargetAtTime(v, audioCtx.currentTime, 0.01);
+            });
+
+            requestAnimationFrame(renderFrame);
+        }
+
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Waveform + metering
+     * ------------------------------------------------------------------ */
+    function sizeCanvas() {
+        if (!canvasCtx) return;
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const w = Math.max(1, Math.floor(rect.width * dpr));
+        const h = Math.max(1, Math.floor(rect.height * dpr));
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+            canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+    }
+
+    function drawWave() {
+        if (!canvasCtx) return;
+        sizeCanvas();
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        if (w === 0 || h === 0) return;
+
+        canvasCtx.clearRect(0, 0, w, h);
+
+        // centre reference line
+        canvasCtx.strokeStyle = 'rgba(59, 130, 246, 0.18)';
+        canvasCtx.lineWidth = 1;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(0, h / 2);
+        canvasCtx.lineTo(w, h / 2);
+        canvasCtx.stroke();
+
+        const analyser = micConnected ? micAnalyser : masterAnalyser;
+        const data = micConnected ? micData : masterData;
+
+        if (!analyser || !data) {
+            // transport idling with no audio engine yet
+            canvasCtx.strokeStyle = 'rgba(59, 130, 246, 0.35)';
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(0, h / 2);
+            canvasCtx.lineTo(w, h / 2);
+            canvasCtx.stroke();
+            return;
+        }
+
+        analyser.getByteTimeDomainData(data);
+
+        canvasCtx.lineWidth = 1.5;
+        canvasCtx.strokeStyle = isGlobalRecording ? '#f43f5e' : '#3b82f6';
+        canvasCtx.beginPath();
+        const slice = data.length / w;
+        for (let x = 0; x < w; x++) {
+            let min = 1;
+            let max = -1;
+            const start = Math.floor(x * slice);
+            const end = Math.min(data.length, Math.floor((x + 1) * slice));
+            for (let i = start; i < end; i++) {
+                const v = (data[i] - 128) / 128;
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+            if (start >= end) {
+                min = max = (data[start] - 128) / 128;
+            }
+            const yMin = (0.5 + min * 0.5) * h;
+            const yMax = (0.5 + max * 0.5) * h;
+            canvasCtx.moveTo(x + 0.5, yMin);
+            canvasCtx.lineTo(x + 0.5, yMax + 0.5);
+        }
+        canvasCtx.stroke();
+    }
+
+    let meterThrottle = 0;
+
+    function updateMeter() {
+        if (!masterAnalyser) return;
+        masterAnalyser.getByteTimeDomainData(masterData);
+        let peak = 0;
+        for (let i = 0; i < masterData.length; i++) {
+            const v = Math.abs((masterData[i] - 128) / 128);
+            if (v > peak) peak = v;
+        }
+        const db = peak > 0.00001 ? 20 * Math.log10(peak) : -120;
+        const dbText = db <= -110 ? '-∞ dB' : (db.toFixed(1) + ' dB');
+        peakTxt.textContent = dbText;
+        peakTxt.className = db > -1 ? 'text-rose-400' : 'text-zinc-300';
+        const pct = Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+        peakBar.style.width = pct.toFixed(1) + '%';
+    }
+
+    function updateTransportUI() {
+        const secs = transportSeconds();
+        clockTxt.textContent = formatSMPTE(secs);
+
+        const totalBeats = secs * (BPM / 60);
+        const bar = Math.floor(totalBeats / 4) + 1;
+        const beat = Math.floor(totalBeats % 4) + 1;
+        barTxt.textContent = `BAR ${bar}.${beat}`;
+
+        const barPos = (secs / BAR_SECONDS) % LOOKAHEAD_BARS;
+        playhead.style.left = ((barPos / LOOKAHEAD_BARS) * 100).toFixed(3) + '%';
+    }
+
+    function renderFrame() {
+        drawWave();
+        updateTransportUI();
+        if (performance.now() - meterThrottle > 90) {
+            meterThrottle = performance.now();
+            updateMeter();
+        }
+        requestAnimationFrame(renderFrame);
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Microphone / interface
+     * ------------------------------------------------------------------ */
+    async function connectInterface() {
+        await initAudio();
+        try {
+            rawMicStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            });
+            streamSource = audioCtx.createMediaStreamSource(rawMicStream);
+            streamSource.connect(micAnalyser);
+            micConnected = true;
+
+            btnConnect.textContent = '🎤 INTERFACE ACTIVE';
+            btnConnect.className = 'text-[10px] bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded font-bold text-emerald-400 transition-colors';
+            setBadge('INPUT 1 LINKED | ' + (audioCtx.sampleRate / 1000).toFixed(1) + 'kHz | LIVE MONITOR ON');
+        } catch (err) {
+            micConnected = false;
+            setBadge('INPUT 1 OFFLINE | CHECK BROWSER MIC PERMISSIONS');
+            alert('Interface linking failed. Please allow microphone permissions.');
+        }
+    }
+
+    function disconnectInterface() {
+        if (rawMicStream) {
+            rawMicStream.getTracks().forEach((t) => t.stop());
+            rawMicStream = null;
+        }
+        if (streamSource) {
+            try { streamSource.disconnect(); } catch (e) { /* already detached */ }
+            streamSource = null;
+        }
+        micConnected = false;
+        btnConnect.textContent = '🎤 ACTIVATE INTERFACE';
+        btnConnect.className = 'text-[10px] bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded font-bold hover:bg-zinc-700 transition-colors';
+        setBadge(IDLE_BADGE);
+    }
+
+    btnConnect.addEventListener('click', () => {
+        if (micConnected) {
+            disconnectInterface();
+        } else {
+            connectInterface();
+        }
+    });
+
+    /* ------------------------------------------------------------------ *
+     *  Instrument voices
+     * ------------------------------------------------------------------ */
+    function kick(vel) {
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.linearRampToValueAtTime(vel, t + 0.004);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+        osc.connect(gain).connect(ampDriveNode);
+        osc.start(t);
+        osc.stop(t + 0.32);
+    }
+
+    function snare(vel) {
+        const t = audioCtx.currentTime;
+        const src = audioCtx.createBufferSource();
+        src.buffer = getNoiseBuffer();
+        const band = audioCtx.createBiquadFilter();
+        band.type = 'bandpass';
+        band.frequency.value = 1900;
+        band.Q.value = 0.9;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(vel, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        src.connect(band).connect(gain).connect(ampDriveNode);
+        src.start(t);
+        src.stop(t + 0.2);
+    }
+
+    function hat(vel) {
+        const t = audioCtx.currentTime;
+        const src = audioCtx.createBufferSource();
+        src.buffer = getNoiseBuffer();
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 7200;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(vel, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+        src.connect(hp).connect(gain).connect(ampDriveNode);
+        src.start(t);
+        src.stop(t + 0.08);
+    }
+
+    function synthBass(freq, vel) {
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const lp = audioCtx.createBiquadFilter();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, t);
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(520, t);
+        lp.frequency.exponentialRampToValueAtTime(180, t + 0.3);
+        lp.Q.value = 5;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.linearRampToValueAtTime(vel, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+        osc.connect(lp).connect(gain).connect(ampDriveNode);
+        osc.start(t);
+        osc.stop(t + 0.36);
+    }
+
+    function powerChord(freqs, vel) {
+        const t = audioCtx.currentTime;
+        freqs.forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, t);
+            osc.detune.setValueAtTime(i * 6, t);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.linearRampToValueAtTime(vel, t + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+            osc.connect(gain).connect(ampDriveNode);
+            osc.start(t);
+            osc.stop(t + 0.45);
+        });
+    }
+
+    function rhodesChord(freqs, vel) {
+        const t = audioCtx.currentTime;
+        freqs.forEach((freq) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.linearRampToValueAtTime(vel, t + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+            osc.connect(gain).connect(ampDriveNode);
+            osc.start(t);
+            osc.stop(t + 1.15);
+        });
+    }
+
+    async function triggerMidiNoteNode(freq, el) {
+        await initAudio();
+        const t = audioCtx.currentTime;
+
+        const body = audioCtx.createOscillator();
+        const bodyGain = audioCtx.createGain();
+        body.type = 'triangle';
+        body.frequency.setValueAtTime(freq, t);
+        bodyGain.gain.setValueAtTime(0.0001, t);
+        bodyGain.gain.linearRampToValueAtTime(0.28, t + 0.008);
+        bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+        body.connect(bodyGain).connect(ampDriveNode);
+        body.start(t);
+        body.stop(t + 1.02);
+
+        const tine = audioCtx.createOscillator();
+        const tineGain = audioCtx.createGain();
+        tine.type = 'sine';
+        tine.frequency.setValueAtTime(freq * 2, t);
+        tineGain.gain.setValueAtTime(0.0001, t);
+        tineGain.gain.linearRampToValueAtTime(0.09, t + 0.004);
+        tineGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+        tine.connect(tineGain).connect(ampDriveNode);
+        tine.start(t);
+        tine.stop(t + 0.6);
+
+        setBadge('MIDI NOTE TRIGGERED: ' + freq.toFixed(2) + 'Hz');
+
+        if (el) {
+            el.classList.add('keys-active');
+            setTimeout(() => el.classList.remove('keys-active'), 140);
+        }
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Clip sequencer (Ableton-style session matrix)
+     * ------------------------------------------------------------------ */
+    const DRUM_PATTERN = {
+        0: 'kick', 2: 'hat', 4: 'snare', 6: 'hat', 8: 'kick',
+        10: 'hat', 11: 'hat', 12: 'snare', 14: 'hat'
+    };
+    const BASS_PATTERN = { 0: 55.0, 3: 55.0, 6: 65.41, 8: 73.42, 11: 55.0, 14: 49.0 };
+    const GTR_PATTERN = {
+        0: [110.0, 164.81], 6: [110.0, 164.81], 8: [98.0, 146.83], 12: [87.31, 130.81]
+    };
+    const KEYS_PATTERN = {
+        0: [261.63, 329.63, 392.0, 493.88], 8: [246.94, 311.13, 392.0, 466.16]
+    };
+
+    function anyClipPlaying() {
+        return Object.values(clips).some((c) => c.playing);
+    }
+
+    function playStep(step) {
+        if (clips.drums.playing && DRUM_PATTERN[step]) {
+            const hit = DRUM_PATTERN[step];
+            if (hit === 'kick') kick(0.85);
+            else if (hit === 'snare') snare(0.45);
+            else hat(0.22);
+        }
+        if (clips.bass.playing && BASS_PATTERN[step]) synthBass(BASS_PATTERN[step], 0.42);
+        if (clips.gtr.playing && GTR_PATTERN[step]) powerChord(GTR_PATTERN[step], 0.16);
+        if (clips.keys.playing && KEYS_PATTERN[step]) rhodesChord(KEYS_PATTERN[step], 0.1);
+    }
+
+    function startSequencer() {
+        if (seqTimer) return;
+        seqStep = 0;
+        seqTimer = setInterval(() => {
+            if (!anyClipPlaying()) {
+                clearInterval(seqTimer);
+                seqTimer = null;
+                sessionTxt.textContent = 'IDLE';
+                return;
+            }
+            playStep(seqStep % 16);
+            seqStep++;
+        }, STEP_MS);
+    }
+
+    function refreshClipUI() {
+        document.querySelectorAll('[data-clip]').forEach((slot) => {
+            const id = slot.dataset.clip;
+            const on = Boolean(clips[id] && clips[id].playing);
+            slot.classList.toggle('is-playing', on);
+        });
+        const active = Object.keys(clips).filter((id) => clips[id].playing);
+        sessionTxt.textContent = active.length ? active.join(' + ').toUpperCase() : 'IDLE';
+        sessionTxt.className = active.length ? 'text-emerald-400' : 'text-zinc-600';
+    }
+
+    async function toggleClip(id) {
+        await initAudio();
+        const clip = clips[id];
+        if (!clip) return;
+        clip.playing = !clip.playing;
+
+        if (clip.playing) {
+            startSequencer();
+            setBadge('CLIP TRIGGERED: ' + id.toUpperCase() + ' @ ' + BPM + ' BPM');
+        } else {
+            setBadge('CLIP STOPPED: ' + id.toUpperCase());
+        }
+        refreshClipUI();
+    }
+
+    document.querySelectorAll('[data-clip]').forEach((slot) => {
+        slot.addEventListener('click', () => toggleClip(slot.dataset.clip));
+    });
+
+    btnStopClips.addEventListener('click', () => {
+        Object.keys(clips).forEach((id) => { clips[id].playing = false; });
+        refreshClipUI();
+        setBadge('ALL CLIPS STOPPED');
+    });
+
+    /* ------------------------------------------------------------------ *
+     *  Transport
+     * ------------------------------------------------------------------ */
+    function setPlaying(on) {
+        if (on === isTransportPlaying) return;
+        if (on) {
+            transportStartedAt = performance.now();
+            isTransportPlaying = true;
+        } else {
+            transportBase = transportSeconds();
+            isTransportPlaying = false;
+        }
+        btnPlay.className = isTransportPlaying
+            ? 'text-xs text-emerald-400 hover:text-emerald-300 font-bold transition-colors'
+            : 'text-xs text-zinc-400 hover:text-white font-bold transition-colors';
+        btnPlay.textContent = isTransportPlaying ? 'PLAY ▶' : 'PLAY';
+    }
+
+    function stopTransport() {
+        setPlaying(false);
+        transportBase = 0;
+        Object.keys(clips).forEach((id) => { clips[id].playing = false; });
+        refreshClipUI();
+        updateTransportUI();
+        setBadge('TRANSPORT STOPPED | BAR 1.1');
+    }
+
+    btnPlay.addEventListener('click', async () => {
+        await initAudio();
+        if (isTransportPlaying) {
+            setPlaying(false);
+            setBadge('TRANSPORT PAUSED | ' + formatSMPTE(transportBase));
+        } else {
+            setPlaying(true);
+            setBadge('TRANSPORT RUNNING | ' + BPM + ' BPM | 4/4');
+        }
+    });
+
+    btnStop.addEventListener('click', () => {
+        if (isGlobalRecording) stopRecording();
+        stopTransport();
+    });
+
+    function toggleTrackArm() {
+        isTrackArmed = !isTrackArmed;
+        btnArm.className = isTrackArmed
+            ? 'text-[10px] bg-rose-950 border border-rose-800 px-2 py-0.5 rounded font-bold text-rose-400 animate-pulse transition-colors'
+            : 'text-[10px] bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded font-bold text-zinc-400 transition-colors';
+        recStatus.textContent = isTrackArmed ? '● ARMED' : '● STANDBY';
+        recStatus.className = isTrackArmed ? 'text-rose-500 font-bold' : 'text-zinc-600 font-bold';
+        setBadge(isTrackArmed ? 'TRACK 1 ARMED | RECORD READY' : 'TRACK 1 DISARMED');
+    }
+
+    btnArm.addEventListener('click', toggleTrackArm);
+
+    /* ------------------------------------------------------------------ *
+     *  Recording (master bus -> MediaRecorder -> take list)
+     * ------------------------------------------------------------------ */
+    function addTake(blob, seconds) {
+        takeCount++;
+        takeCountTxt.textContent = takeCount + ' RECORDED';
+
+        const url = URL.createObjectURL(blob);
+        const row = document.createElement('div');
+        row.className = 'bg-zinc-950 border border-zinc-800 rounded p-2 space-y-1';
+
+        const head = document.createElement('div');
+        head.className = 'flex items-center justify-between font-mono text-[10px]';
+        const name = document.createElement('span');
+        name.className = 'text-rose-400';
+        name.textContent = 'TAKE ' + String(takeCount).padStart(2, '0') + ' · ' + seconds.toFixed(1) + 's';
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'tone-art-take-' + takeCount + '.webm';
+        link.className = 'text-zinc-400 hover:text-white';
+        link.textContent = 'DOWNLOAD';
+        head.append(name, link);
+
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = url;
+        audio.className = 'w-full h-8';
+
+        row.append(head, audio);
+
+        const empty = takesList.querySelector('p');
+        if (empty) empty.remove();
+        takesList.prepend(row);
+    }
+
+    function startRecording() {
+        if (!masterGainNode || typeof MediaRecorder === 'undefined') {
+            setBadge('RECORDING UNSUPPORTED IN THIS BROWSER');
+            return;
+        }
+        recDestination = audioCtx.createMediaStreamDestination();
+        masterGainNode.connect(recDestination);
+
+        const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+        recorder = new MediaRecorder(recDestination.stream, mime ? { mimeType: mime } : undefined);
+        recChunks = [];
+
+        recorder.addEventListener('dataavailable', (e) => {
+            if (e.data.size) recChunks.push(e.data);
+        });
+        recorder.addEventListener('stop', () => {
+            const elapsed = isTransportPlaying ? transportSeconds() : transportBase;
+            const type = recorder && recorder.mimeType ? recorder.mimeType : 'audio/webm';
+            if (recChunks.length) addTake(new Blob(recChunks, { type: type }), elapsed);
+            recChunks = [];
+            recorder = null;
+            if (recDestination) {
+                try { masterGainNode.disconnect(recDestination); } catch (e) { /* already detached */ }
+                recDestination = null;
+            }
+        });
+
+        recorder.start();
+        isGlobalRecording = true;
+        btnGlobalRec.className = 'w-4 h-4 rounded-full bg-rose-500 animate-pulse shadow-[0_0_12px_#e11d48]';
+        setBadge('RECORDING PIPELINE LIVE | CAPTURING MASTER BUS');
+    }
+
+    function stopRecording() {
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
+        isGlobalRecording = false;
+        btnGlobalRec.className = 'w-4 h-4 rounded-full bg-rose-600 hover:bg-rose-500 transition-all shadow-[0_0_8px_#e11d48]';
+        setBadge('RECORDING STOPPED | TAKE CAPTURED');
+    }
+
+    btnGlobalRec.addEventListener('click', async () => {
+        await initAudio();
+        if (!isTrackArmed) {
+            alert('Please ARM the audio track first.');
+            return;
+        }
+        if (isGlobalRecording) {
+            stopRecording();
+            setPlaying(false);
+        } else {
+            setPlaying(true);
+            startRecording();
+        }
+    });
+
+    /* ------------------------------------------------------------------ *
+     *  Keyboard keybed
+     * ------------------------------------------------------------------ */
+    document.querySelectorAll('.key').forEach((key) => {
+        key.addEventListener('click', () => {
+            triggerMidiNoteNode(Number(key.dataset.freq), key);
+        });
+    });
+
+    const KEY_MAP = {
+        a: 'C', s: 'D', d: 'E', f: 'F', g: 'G', h: 'A', j: 'B'
+    };
+
+    document.addEventListener('keydown', (e) => {
+        if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        const letter = KEY_MAP[e.key.toLowerCase()];
+        if (!letter) return;
+        const key = Array.from(document.querySelectorAll('.key')).find((k) => k.textContent.trim() === letter);
+        if (!key) return;
+        e.preventDefault();
+        triggerMidiNoteNode(Number(key.dataset.freq), key);
+    });
+
+    /* ------------------------------------------------------------------ *
+     *  Boot
+     * ------------------------------------------------------------------ */
+    window.addEventListener('resize', () => {
+        sizeCanvas();
+        if (!audioCtx) drawWave();
+    });
+
+    sizeCanvas();
+    drawWave();
+    updateTransportUI();
+    refreshClipUI();
+    setBadge(IDLE_BADGE);
+    </script>
+</body>
+</html>

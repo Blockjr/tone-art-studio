@@ -1,0 +1,10 @@
+; The COM in-process server entry points. Exporting them here rather than with
+; __declspec(dllexport) keeps the definitions identical to the declarations the
+; Windows SDK headers already make, so MSVC does not report a linkage clash.
+LIBRARY HybridVirtualAsio
+
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow
+    DllRegisterServer
+    DllUnregisterServer

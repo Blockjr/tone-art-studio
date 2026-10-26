@@ -1,0 +1,26 @@
+{
+  "name": "tone-art-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tone Art Studio - a browser DAW with arrangement, session, mixer, devices and mastering",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "remote": "node server/remote.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "jsdom": "^30.1.3",
+    "jsqr": "^1.4.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

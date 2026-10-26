@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-installer/
+native/build/
+artifacts/
+.DS_Store
+*.log
+native/webview2/
+native/third_party/
+
+# Chat download bundle, not part of the source tree
+Tone-Art-Studio-0.1.0-source.zip

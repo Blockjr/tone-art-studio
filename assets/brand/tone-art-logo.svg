@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tone Art Studio">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#161a23"/>
+      <stop offset="1" stop-color="#0a0c11"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.05" r="0.75">
+      <stop offset="0" stop-color="#f43f5e" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#f43f5e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f43f5e"/>
+      <stop offset="1" stop-color="#f5a524"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="508" height="508" rx="114" fill="url(#body)" stroke="#f43f5e" stroke-opacity="0.49" stroke-width="3.4"/>
+  <rect x="2" y="2" width="508" height="508" rx="114" fill="url(#glow)"/>
+  <rect x="92.5" y="180" width="51" height="152" rx="25.5" fill="#f4e9d6"/>
+  <rect x="161.5" y="134.5" width="51" height="243" rx="25.5" fill="#f4e9d6"/>
+  <rect x="230.5" y="66.5" width="51" height="379" rx="25.5" fill="url(#accent)"/>
+  <rect x="299.5" y="112" width="51" height="288" rx="25.5" fill="#f4e9d6"/>
+  <rect x="368.5" y="157.5" width="51" height="197" rx="25.5" fill="#f4e9d6"/>
+</svg>

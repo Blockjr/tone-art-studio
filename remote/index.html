@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#08090c" />
+  <meta name="description" content="Tone Art Studio remote: transport, console and master control from a phone or tablet on the same network." />
+  <title>Tone Art Studio · Remote</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <!-- Bump these query strings together with VERSION in service-worker.js. -->
+  <link rel="stylesheet" href="/style.css?v=5" />
+</head>
+<body>
+  <div class="shell">
+
+    <header class="top">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+          <defs>
+            <linearGradient id="markGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ff8ba0" />
+              <stop offset="1" stop-color="#e11d48" />
+            </linearGradient>
+          </defs>
+          <rect x="1" y="1" width="38" height="38" rx="10" fill="#12151c" stroke="#2b3040" />
+          <rect x="10" y="17" width="3" height="12" rx="1.5" fill="url(#markGrad)" />
+          <rect x="16" y="9" width="3" height="20" rx="1.5" fill="url(#markGrad)" />
+          <rect x="22" y="13" width="3" height="16" rx="1.5" fill="#f5a524" />
+          <rect x="28" y="20" width="3" height="9" rx="1.5" fill="#22c98a" />
+        </svg>
+        <div class="brand-text">
+          <strong>MY <span>STUDIO</span></strong>
+          <em>REMOTE</em>
+        </div>
+      </div>
+
+      <div class="project">
+        <strong id="project-name">—</strong>
+        <span id="project-meta">—</span>
+      </div>
+
+      <button id="connect-btn" class="connect-btn" type="button" aria-haspopup="dialog" aria-controls="connect-dialog" title="Bridge connection">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0M7 12a5 5 0 0 1 10 0M10 12a2 2 0 0 1 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+        <span id="connect-kind">LAN</span>
+      </button>
+
+      <div id="status-pill" class="status-pill" role="status" aria-live="polite">
+        <i class="dot" id="dot"></i>
+        <span id="status">connecting…</span>
+        <span class="latency" id="latency"></span>
+      </div>
+    </header>
+
+    <div id="offline-banner" class="offline-banner" hidden>
+      No network — the cached remote is ready and will reconnect by itself.
+    </div>
+
+    <section class="transport" aria-label="Transport">
+      <div class="transport-pads">
+        <button id="rewind" class="pad" aria-label="Return to start" title="Return to start">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14l-11-7z" fill="currentColor" /></svg>
+        </button>
+        <button id="play" class="pad play" aria-label="Play or pause" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path id="play-icon" d="M8 5v14l11-7z" fill="currentColor" /></svg>
+        </button>
+        <button id="stop" class="pad" aria-label="Stop" title="Stop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" /></svg>
+        </button>
+        <button id="record" class="pad record" aria-label="Record" aria-pressed="false" title="Record onto an armed audio track">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" fill="currentColor" /></svg>
+        </button>
+        <button id="loop" class="pad loop" aria-label="Loop" aria-pressed="false" title="Loop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h9a4 4 0 0 1 0 8h-2m-6 2H7a4 4 0 0 1 0-8h2m7-4 3 3-3 3M10 18l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+      </div>
+
+      <div class="readout">
+        <div class="lcd">
+          <span id="record-state" class="record-state" hidden>REC</span>
+          <span id="position">1.1.1</span>
+          <em>BAR · BEAT · 16TH</em>
+        </div>
+        <div class="tempo" aria-label="Tempo">
+          <button id="tempo-down" class="step" aria-label="Slower">−</button>
+          <div class="bpm">
+            <span id="bpm">124</span>
+            <em>BPM</em>
+          </div>
+          <button id="tempo-up" class="step" aria-label="Faster">+</button>
+          <button id="tap" class="step tap" aria-label="Tap tempo" title="Tap four times to set the tempo">TAP</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="seek-wrap" aria-label="Song position">
+      <div class="seek" id="seek-track">
+        <div class="loop-band" id="loop-band"></div>
+        <div class="seek-fill" id="seek-fill"></div>
+        <div class="seek-head" id="seek-head"></div>
+      </div>
+      <input id="seek" type="range" min="0" max="32" step="0.25" value="0" aria-label="Seek song position" />
+      <div class="seek-meta"><span>1</span><span id="seek-total">—</span></div>
+    </section>
+
+    <main class="scroll">
+      <div class="stage">
+        <section class="block song" aria-label="Arrangement overview">
+          <header class="block-head">
+            <h2>Arrangement</h2>
+            <span class="count">tap a clip to jump</span>
+          </header>
+          <div class="song-map" id="song-map" tabindex="0" aria-label="Arrangement overview. Use left and right arrows to move the playhead.">
+            <div class="song-rows" id="song-rows"></div>
+            <div class="song-loop" id="song-loop"></div>
+            <div class="song-play" id="song-play"></div>
+          </div>
+          <div class="song-meta"><span id="song-start">1.1</span><span id="song-end">—</span></div>
+        </section>
+
+        <section class="block perf" aria-label="Performance effects">
+          <header class="block-head">
+            <h2>Performance</h2>
+            <span class="count" id="perf-track">—</span>
+          </header>
+          <div class="perf-card">
+            <div class="perf-pad" id="perf-pad" role="application" tabindex="0" aria-label="Performance sends pad. Arrows adjust the reverb and delay sends, Home zeroes them.">
+              <span class="perf-axis x" id="perf-axis-x">REVERB →</span>
+              <span class="perf-axis y" id="perf-axis-y">DELAY ↑</span>
+              <span class="perf-corner">FX</span>
+              <svg class="perf-trail" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <polyline id="perf-trail" points="" />
+              </svg>
+              <div class="perf-cross v"></div>
+              <div class="perf-cross h"></div>
+              <div class="perf-dot" id="perf-dot"></div>
+            </div>
+            <div class="perf-side">
+              <div class="perf-readout"><span id="perf-name-a">REV</span><strong id="perf-a">0%</strong></div>
+              <div class="perf-readout"><span id="perf-name-b">DLY</span><strong id="perf-b">0%</strong></div>
+              <button id="perf-reset" class="perf-reset" type="button">Zero sends</button>
+              <p class="perf-hint">Drag into the corner to throw the selected channel into both effects. Double-tap to zero.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="block">
+        <header class="block-head">
+          <h2>Tracks</h2>
+          <span id="track-count" class="count">—</span>
+        </header>
+        <div id="tracks" class="tracks"></div>
+      </section>
+
+      <section class="block">
+        <header class="block-head">
+          <h2>Aux returns</h2>
+          <span class="count">sends A–D</span>
+        </header>
+        <div id="returns" class="returns"></div>
+      </section>
+    </main>
+
+    <footer class="master" aria-label="Master">
+      <div class="master-meter"><i id="master-fill"></i><span class="peak-hold" id="master-peak-hold"></span></div>
+      <div class="master-body">
+        <div class="master-title"><strong>MASTER</strong><div class="master-values"><span id="master-gain">−∞ dB</span><span id="master-db" class="master-peak">−∞ dB PEAK</span></div></div>
+        <input id="master" type="range" min="0" max="1.4" step="0.01" value="1" aria-label="Master volume" />
+        <div id="master-chain" class="master-chain"></div>
+      </div>
+    </footer>
+
+    <footer class="fineprint">
+      <span id="net-mode">LAN session · no cloud</span>
+      <button id="link" class="fineprint-link" type="button">ws://…</button>
+    </footer>
+  </div>
+
+  <div id="connect-dialog" class="connect-dialog" role="dialog" aria-modal="true" aria-labelledby="connect-title" hidden>
+    <form id="connect-form" method="dialog">
+      <header class="connect-head">
+        <div>
+          <h2 id="connect-title">Bridge connection</h2>
+          <p>Same Wi-Fi needs no internet. Outside the studio, use the tunnel or forwarded address.</p>
+        </div>
+        <button id="connect-close" class="connect-close" type="button" aria-label="Close">✕</button>
+      </header>
+      <label class="connect-field">
+        <span>Bridge address</span>
+        <input id="connect-address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="192.168.1.20:8787" />
+      </label>
+      <label class="connect-field">
+        <span>Access token</span>
+        <input id="connect-token" type="password" autocomplete="off" placeholder="only if the bridge has REMOTE_TOKEN set" />
+      </label>
+      <div class="connect-actions">
+        <button id="connect-apply" class="connect-primary" type="submit">Connect</button>
+        <button id="connect-same" class="connect-secondary" type="button">Use this page's address</button>
+      </div>
+      <p id="connect-note" class="connect-note" role="status"></p>
+      <button id="install-app" class="connect-install" type="button" hidden>Install the remote on this device</button>
+      <p class="connect-help">On the studio computer run <code>npm run remote</code>. It prints the Wi-Fi address and, when configured, the internet address. Add it to your home screen for a full-screen, cache-backed controller.</p>
+    </form>
+  </div>
+
+  <script src="/app.js?v=5"></script>
+</body>
+</html>
