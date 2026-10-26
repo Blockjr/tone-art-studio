@@ -1,0 +1,67 @@
+name: apply-patches
+
+# Applies the patch files in .github/patches to the working tree and commits
+# them. It exists because the fixes were authored in a cloud worktree that has
+# no push credentials: the diff travels as text, git applies it here, and the
+# commit is made by the runner.
+#
+# Every patch is applied with `git apply` first and `patch --ignore-whitespace`
+# second, so a trailing space lost in transit cannot block the change. Each file
+# is then checked for the marker it is supposed to gain.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply every patch
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patches=(.github/patches/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo '::error::no patches found'
+            exit 1
+          fi
+          for p in "${patches[@]}"; do
+            echo "== $p"
+            if git apply -v --whitespace=nowarn "$p" 2>/dev/null; then
+              echo "applied with git apply"
+            else
+              echo "git apply refused it; retrying with patch(1)"
+              patch -p1 --batch --forward --ignore-whitespace < "$p"
+            fi
+          done
+
+      - name: Check the result
+        run: |
+          set -euo pipefail
+          grep -q 'announceUiReady' src/native/bridge.ts
+          grep -q 'announceUiReady' src/main.ts
+          grep -q 'findWebView2Version' native/Source/MainComponent.cpp
+          grep -q 'drawProblem' native/Source/MainComponent.cpp
+          grep -q 'uiReady' native/Source/MainComponent.h
+          grep -q 'MicrosoftEdgeWebView2Setup.exe' installer/ToneArtStudio.iss
+          grep -q 'WebView2KeyUser' installer/ToneArtStudio.iss
+          echo 'all markers present'
+
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name 'Tone Art Studio build'
+          git config user.email 'build@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo '::notice::nothing to commit; the patches were already applied'
+            exit 0
+          fi
+          git commit -m 'Explain a failed interface load instead of showing a white window'
+          git push
+          git --no-pager show --stat --oneline HEAD
