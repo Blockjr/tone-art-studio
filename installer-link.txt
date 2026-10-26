@@ -1,2 +1,2 @@
-Bad file type!
+Invalid uploader
 fa386df3c5158ef5f376211e019c22081bc3fb756db310f4dee8708c375b95bf
