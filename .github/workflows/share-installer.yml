@@ -7,33 +7,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Publish a public copy of the installer
+      - name: Fetch the built installer
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p out
           gh release download v0.1.0 --pattern '*.exe' --dir out --clobber
-          file=$(ls out/*.exe | head -1)
-          sha=$(sha256sum "$file" | cut -d' ' -f1)
-          (cd out && zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")")
-          cd out
-          log=../upload-log.txt
-          : > $log
-          bin=tas$(date +%s)
-          r1=$(curl -sS --max-time 240 -X POST --data-binary @ToneArtStudioSetup-0.1.0.zip -H 'filename: ToneArtStudioSetup-0.1.0.zip' -H "bin: $bin" https://filebin.net 2>&1 || true)
-          echo "filebin: $r1" >> $log
-          cd ..
-          url=""
-          if echo "$r1" | grep -q ToneArtStudioSetup; then
-            url="https://filebin.net/$bin/ToneArtStudioSetup-0.1.0.zip"
-          fi
-          echo "FINAL=$url" >> $log
-          { echo "$url"; echo "$sha"; } > installer-link.txt
-          cat $log
-      - name: Commit the link so the app can read it
+          ls -l out
+          sha256sum out/*.exe
+      - name: Commit the installer so it can be re-hosted
         run: |
+          mkdir -p installer-dist
+          cp out/*.exe installer-dist/ToneArtStudioSetup-0.1.0.exe
+          sha256sum installer-dist/*.exe | cut -d' ' -f1 > installer-dist/SHA256.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add installer-link.txt upload-log.txt
-          git commit -m 'Record the public installer link' || true
+          git add -f installer-dist
+          git commit -m 'Stage the 0.1.0 installer for public download' || true
           git push
