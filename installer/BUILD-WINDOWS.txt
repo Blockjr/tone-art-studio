@@ -1,11 +1,18 @@
 MY STUDIO - WINDOWS INSTALLER KIT
 =====================================
 
-This folder builds ToneArtStudioSetup-0.1.0.exe: the Windows installer, with
-the logo artwork, the application icon and the Virtual ASIO driver built in.
+This folder builds the two Windows installers, both named after the version in
+package.json:
 
-The installer executable itself is not in this zip, because it can only be
-compiled on Windows (Inno Setup + MSVC). One command produces it; see below.
+  dist-installer\ToneArtStudioSetup-<version>.exe      the installed app
+  dist-native\ToneArtStudioHostSetup-<version>.exe     the native engine (ASIO)
+
+both with the logo artwork, the application icon and the Virtual ASIO driver
+built in.
+
+The installers themselves are not in the source tree, because they can only be
+compiled on Windows (Inno Setup + MSVC) and because a copy kept in the tree is a
+version that goes stale. One command produces them; see below.
 
 
 WHAT IS IN HERE
@@ -34,9 +41,10 @@ BUILD THE INSTALLER
   from src/ (that needs `npm ci` once).
 
   The script configures CMake, fetches JUCE 9.0.4, pulls the ASIO SDK
-  submodule, compiles Release, then runs ISCC. It prints the path it wrote:
+  submodule, compiles Release, then runs ISCC. It prints the paths it wrote:
 
-      dist-installer\ToneArtStudioSetup-0.1.0.exe
+      dist-installer\ToneArtStudioSetup-<version>.exe
+      dist-native\ToneArtStudioHostSetup-<version>.exe
 
   The first run downloads JUCE (about 150 MB) and compiles for 10-20 minutes.
   Rebuilds after that take a couple of minutes.

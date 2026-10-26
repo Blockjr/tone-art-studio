@@ -1,13 +1,18 @@
-# Building Tone Art Studio 0.3.0 as a Windows program
+# Building Tone Art Studio as a Windows program
 
-This bundle is the complete source of the version with MIDI input, MIDI effects
-and the panel/startup fixes. Nothing has to be reconstructed: unzip it and build.
+This is the complete source: unzip it and build. The version comes from
+`package.json`, so the file names below carry whatever version you are on.
 
 ## What you get
 
-`dist-installer\ToneArtStudioSetup-0.3.0.exe` — a normal installed Windows
+`dist-installer\ToneArtStudioSetup-<version>.exe` — a normal installed Windows
 program: Start menu entry, desktop shortcut, uninstaller, and its own embedded
 browser engine so it does not depend on what is installed on the PC.
+
+`dist-native\ToneArtStudioHostSetup-<version>.exe` — the native engine, which is
+the ASIO and VST3 build: the JUCE host, the Tone Art Gate VST3 and the Tone Art
+Virtual ASIO driver registered at install time. See [DOWNLOAD.md](../DOWNLOAD.md)
+for which of the two to hand someone.
 
 ## Option 1 — build on your own Windows PC (about 5 minutes)
 
@@ -37,14 +42,12 @@ native-windows → Run workflow). It builds on a real Windows machine, uploads t
 installer as an artifact and attaches it to the release. The run log prints a
 public download link and the SHA-256 as well.
 
-## The one thing this build does not do yet
+## Which of the two programs you want
 
-Audio in this build goes through Windows' normal audio path (the Chromium engine
-inside the app), not ASIO, and it does not host VST3 plugins. The Studio Rig
-panel says so rather than offering buttons that do nothing.
-
-A DAW that records and plays at low latency through an audio interface needs the
-native engine: JUCE opening the ASIO driver, and the VST3 scanner/host. That code
-already exists in `native/` and builds in CI; what is missing is running it as a
-background audio process that the app talks to. That is the next piece of work,
-and it needs a Windows machine to verify.
+Audio in the plain app goes through Windows' normal audio path (the Chromium
+engine inside the app), not ASIO, and it does not host VST3 plugins — the Studio
+Rig panel says so rather than offering buttons that do nothing. That is why the
+native engine exists: JUCE opening an ASIO device, the VST3 scanner and host, and
+the virtual driver. Both are built by the same command and both are published;
+install the native engine when you want the ASIO DAW, and the plain app when you
+want the interface and the tablet remote.
