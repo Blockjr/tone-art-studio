@@ -1,1 +1,1 @@
-0a1b070784a144ea9de76cbfed56967e8573c041a5b1db2c411c2fb9f834defb  ToneArtStudioSetup-0.1.0.exe
+31f74513bbaa9299c088766a6c5da8785ab06fcbea09fc43ae7737e791276c38  ToneArtStudioSetup-0.1.0.exe
