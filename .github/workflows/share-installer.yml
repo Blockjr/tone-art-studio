@@ -11,14 +11,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -x
           mkdir -p out
           gh release download v0.1.0 --pattern '*.exe' --dir out --clobber
           file=$(ls out/*.exe | head -1)
-          echo "asset: $file"
+          sha=$(sha256sum "$file" | cut -d' ' -f1)
+          echo "asset sha: $sha"
           cd out && zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")" && cd ..
-          url=$(curl -sS --max-time 300 -F reqtype=fileupload -F "fileToUpload=@out/ToneArtStudioSetup-0.1.0.zip" https://catbox.moe/user/api.php)
-          echo "URL=$url"
-          { echo "$url"; sha256sum "$file" | cut -d' ' -f1; } > installer-link.txt
+          url=$(curl -sS -A 'Mozilla/5.0 tone-art-studio' -F "file=@out/ToneArtStudioSetup-0.1.0.zip" https://0x0.st || true)
+          echo "0x0: $url"
+          case "$url" in
+            https://*) ;;
+            *)
+              meta=$(curl -sS -T out/ToneArtStudioSetup-0.1.0.zip https://pixeldrain.com/api/file/ || true)
+              echo "pixeldrain: $meta"
+              id=$(echo "$meta" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+              if [ -n "$id" ]; then url="https://pixeldrain.com/api/file/$id?download"; fi
+              ;;
+          esac
+          echo "FINAL=$url"
+          { echo "$url"; echo "$sha"; } > installer-link.txt
           cat installer-link.txt
       - name: Commit the link so the app can read it
         run: |
