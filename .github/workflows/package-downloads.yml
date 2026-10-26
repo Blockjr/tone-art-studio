@@ -7,16 +7,15 @@ name: package-downloads
 # from package.json and the release's own SHA256SUMS.txt, so a run after any
 # release packs that release.
 #
-# Two mistakes this file has already made and must not make again:
+# Three mistakes this file has already made and must not make again:
 #
 #   - it hardcoded the 0.1.0 tag, name and hash, so it could only ever rebuild
 #     one old release;
 #   - ALL.zip only contained the app, so the "everything" download was missing
-#     the native engine (ASIO, VST3, the driver) and the driver on its own.
-#
-# Every installer is fetched from the release and verified against the hash the
-# release published before it is packed, and a missing expected file fails the
-# run instead of silently shipping a smaller bundle.
+#     the native engine (ASIO, VST3, the driver) and the driver on its own;
+#   - it downloaded and hashed by wildcard, which swept the bundle zips from
+#     earlier runs into the new sums file as duplicate lines with stale hashes,
+#     so `sha256sum -c` failed on good downloads.
 
 on:
   workflow_dispatch:
@@ -54,15 +53,23 @@ jobs:
             echo "DRIVER=$driver"
           } >> "$GITHUB_ENV"
 
+          # Download the three installers by name, never by a ToneArtStudio*
+          # wildcard: that also matches the bundle zips this job published on an
+          # earlier run, and hashing those into the new sums file produces
+          # duplicate lines with stale hashes - which makes `sha256sum -c` fail
+          # on a perfectly good download.
           mkdir -p build/exe
-          gh release download "$tag" --pattern 'ToneArtStudio*' --dir build/exe
+          gh release download "$tag" --pattern "$app"  --dir build/exe
+          gh release download "$tag" --pattern "$host" --dir build/exe
+          gh release download "$tag" --pattern "$driver" --dir build/exe \
+            || echo "::warning::$driver is not attached to $tag"
           gh release download "$tag" --pattern 'SHA256SUMS.txt' --dir build/exe
 
-          # Windows writes this file with CRLF endings. Strip them once, here, so
-          # every later read is a plain grep against a file name: an anchored
+          # Windows writes the sums file with CRLF endings. Strip them once, here,
+          # so every later read is a plain grep against a file name: an anchored
           # `grep 'name$'` never matches "name\r", and under `pipefail` a grep
-          # that matches nothing fails the whole step - which is exactly how the
-          # first version of this bundle job died without saying why.
+          # that matches nothing fails the whole step - which is exactly how an
+          # earlier version of this job died without saying why.
           tr -d '\r' < build/exe/SHA256SUMS.txt > build/exe/SHA256SUMS.unix.txt
 
           # The native engine and the app are both the product: one is the ASIO
@@ -187,15 +194,16 @@ jobs:
             ToneArtStudio-4-Web-Build.zip \
             ToneArtStudio-5-Engine-ASIO-Driver.zip)
 
-          # Bare file names only: a sums file has to be usable with
-          # `sha256sum -c` from the folder the files are in, so nothing here
-          # carries a path.
+          # Bare file names only, and never a wildcard: a sums file has to be
+          # usable with `sha256sum -c` from the folder the files are in, and the
+          # folder it is built from also holds the release's own SHA256SUMS.txt
+          # and the CR-stripped copy of it, which are not downloads.
           {
             (cd "$out" && sha256sum *.zip)
-            # The three published installers, by bare name. Not `*`: that would
-            # drag the internal SHA256SUMS.unix.txt helper into a list of files
-            # nobody has.
-            (cd "$ws/build/exe" && sha256sum ToneArtStudio*)
+            (cd "$ws/build/exe" && sha256sum "$APP" "$HOST")
+            if [ -f "$ws/build/exe/$DRIVER" ]; then
+              (cd "$ws/build/exe" && sha256sum "$DRIVER")
+            fi
           } > "$out/SHA256.txt"
           cat "$out/SHA256.txt" && ls -l "$out"
 
