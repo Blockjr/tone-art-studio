@@ -35,6 +35,13 @@ on:
 permissions:
   contents: write
 
+# Publishing here and packing in package-downloads.yml share one queue, so a
+# bundle cannot be assembled out of a release that is halfway through being
+# replaced.
+concurrency:
+  group: tone-art-release
+  cancel-in-progress: false
+
 env:
   # MSBuild prints errors only, which keeps the log small enough to read whole.
   HYBRID_QUIET_BUILD: "1"
@@ -46,9 +53,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 24, not 20: package.json declares >= 22.12 and the toolchain is built and
+      # tested on 24 (see .github/workflows/verify.yml). This pin sat at 20 while
+      # the dependencies required 22, so `npm ci` here reported EBADENGINE for
+      # seventeen packages and the installers were built on a runtime nothing
+      # else in the repository was tested against.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
 
       # One entry point for the whole chain, the same script a local run uses:
