@@ -9,4 +9,10 @@ native/webview2/
 native/third_party/
 
 # Chat download bundle, not part of the source tree
-Tone-Art-Studio-0.1.0-source.zip
+Tone-Art-Studio-*-source.zip
+
+# Installers are release assets. A copy committed here is a fixed version that
+# goes stale and gets handed to someone as "the app" long after it stopped
+# being the current one: the desktop kit downloads the newest published build
+# instead of shipping a copy (see remote-kit/setup.ps1).
+remote-kit/ToneArtStudioSetup-*.exe

@@ -8,6 +8,11 @@
 
 $ErrorActionPreference = 'Continue'
 
+# Windows PowerShell 5.1 can still be negotiated down to TLS 1.0, which GitHub
+# refuses, so ask for 1.2 before anything touches the network. Harmless on newer
+# shells, which already default to it.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $exeName = 'Tone Art Studio.exe'
 $installDir = Join-Path $env:ProgramFiles 'Tone Art Studio'
@@ -32,6 +37,34 @@ function Find-Node {
     return $null
 }
 
+function Get-PublishedInstaller {
+    # Nothing to install from beside the script: ask the release what the newest
+    # app installer is called and fetch it. The asset name carries the version,
+    # so nothing here has to be updated when a new version is published - and a
+    # copy that was sitting in this folder can never go stale, because there is
+    # no copy in this folder.
+    $release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'ToneArtStudio-setup' } `
+        -Uri 'https://api.github.com/repos/Blockjr/tone-art-studio/releases/latest'
+
+    $asset = $release.assets |
+        Where-Object { $_.name -like 'ToneArtStudioSetup-*.exe' } |
+        Sort-Object name -Descending |
+        Select-Object -First 1
+
+    if (-not $asset) {
+        Write-Warn2 'The newest release has no app installer attached.'
+        return $null
+    }
+
+    # GetTempPath rather than $env:TEMP: the environment variable is not set in
+    # every session, and a setup script that silently downloads to the current
+    # folder because of that is a nasty surprise.
+    $target = Join-Path ([System.IO.Path]::GetTempPath()) $asset.name
+    Write-Ok ("Downloading {0} ({1:N0} MB)..." -f $asset.name, ($asset.size / 1MB))
+    Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $target
+    return (Get-Item $target)
+}
+
 function New-Shortcut($path, $target, $workDir, $icon, $description) {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut($path)
@@ -53,11 +86,26 @@ if (Test-Path $installedExe) {
     Write-Ok "Already installed: $installedExe"
 }
 else {
+    # A copy dropped in this folder is used as-is - someone offline, or with a
+    # build of their own, gets exactly that. Otherwise the newest published one
+    # is fetched, so this kit never installs a version it has been carrying
+    # around since it was packed.
     $installer = Get-ChildItem -Path $root -Filter 'ToneArtStudioSetup-*.exe' -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -First 1
+
     if ($null -eq $installer) {
-        Write-Warn2 'ToneArtStudioSetup-*.exe is not next to this script.'
-        Write-Warn2 "Download it, put it in this folder and run this again."
+        try {
+            $installer = Get-PublishedInstaller
+        }
+        catch {
+            Write-Warn2 "The download did not work: $($_.Exception.Message)"
+        }
+    }
+
+    if ($null -eq $installer) {
+        Write-Warn2 'No installer to run. Download one from'
+        Write-Warn2 'https://github.com/Blockjr/tone-art-studio/releases/latest'
+        Write-Warn2 'put it in this folder and run this again.'
     }
     else {
         Write-Ok "Running $($installer.Name)"

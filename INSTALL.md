@@ -80,12 +80,14 @@ when it is missing (or opens nodejs.org if `winget` is unavailable). Details are
 in `README.txt` inside the zip. The source of the kit is `remote-kit/` in this
 repository.
 
-`ToneArtStudioSetup-0.1.0.exe` — 7,633,647 bytes,
-SHA-256 `fa386df3c5158ef5f376211e019c22081bc3fb756db310f4dee8708c375b95bf`.
-It contains `Tone Art Studio.exe`, the `ui` folder the window renders, the
-`HybridVirtualAsio.dll` driver with its registration script, the `Tone Art Gate`
-VST3 and `README.md`. Download it, then continue at
-[1.4 Install it](#14-install-it).
+Download whichever you need from the
+[latest release](https://github.com/Blockjr/tone-art-studio/releases/latest):
+`ToneArtStudioSetup-<version>.exe` is the installed app (its interface runs in a
+web view, and it carries the tablet remote), and
+`ToneArtStudioHostSetup-<version>.exe` is the native engine with ASIO, VST3
+hosting and the driver. [DOWNLOAD.md](DOWNLOAD.md) explains which is which; the
+release page and its `SHA256SUMS.txt` carry the sizes and hashes. Then continue
+at [1.4 Install it](#14-install-it).
 
 The `.exe` can only be compiled **on Windows**: it needs the MSVC toolchain and Inno Setup. Everything needed to produce it is in this folder — one PowerShell command runs the whole chain and prints the path of the finished installer.
 
@@ -138,8 +140,11 @@ The script prints a cyan `==` heading as it moves through four steps:
 **Result:**
 
 ```
-dist-installer\ToneArtStudioSetup-0.1.0.exe
+dist-installer\ToneArtStudioSetup-<version>.exe
+dist-native\ToneArtStudioHostSetup-<version>.exe
 ```
+`<version>` is read from `package.json`, so the two names always agree with the
+version in the file.
 
 The script prints the exact path and the file size when it finishes.
 
@@ -154,7 +159,7 @@ The script prints the exact path and the file size when it finishes.
 
 ### 1.4 Install it
 
-1. Double-click `dist-installer\ToneArtStudioSetup-0.1.0.exe`.
+1. Double-click `dist-installer\ToneArtStudioSetup-<version>.exe`.
 2. Windows SmartScreen shows **“Windows protected your PC”** because the setup is unsigned. Click **More info → Run anyway**. Signing the executable with a code-signing certificate is the only way to remove that prompt.
 3. Accept the UAC prompt. Administrator rights are required because the virtual ASIO driver registers itself machine-wide.
 4. The wizard shows the Tone Art Studio artwork. Choose whether you want a **desktop shortcut** (off by default) and whether to **register the Tone Art Virtual ASIO driver** (on by default — say yes unless you use another virtual driver).
@@ -249,7 +254,7 @@ All three pass on a clean checkout. The suite includes a 38-test app-shell pass 
 ## Part 4 — Folder map
 
 ```
-package.json              version (0.1.0) — the installer name follows it
+package.json              version — the installer name follows it
 index.html                web entry point
 src/                      UI and audio sources
   core/                   project model, session, undo, time

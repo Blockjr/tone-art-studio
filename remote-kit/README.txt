@@ -4,8 +4,8 @@ TONE ART STUDIO - DESKTOP KIT
 Two things, one double-click each:
 
   1. Double-click  "Tone Art Studio Desktop Setup.cmd"
-     It installs the app (if it is not installed yet) and puts TWO icons on
-     your Desktop:
+     It installs the app (downloading the newest published one if this folder
+     does not have a copy beside it) and puts TWO icons on your Desktop:
         - Tone Art Studio   -> the app
         - Tone Art Remote   -> the tablet remote
 
@@ -35,9 +35,13 @@ FIRST TIME ONLY
 WHAT IS IN THIS FOLDER
   Tone Art Studio Desktop Setup.cmd   installs the app + makes both icons
   Tone Art Remote.cmd                 starts the tablet bridge
-  ToneArtStudioSetup-0.1.0.exe        the Windows installer itself
   Remote\                             the bridge the remote icon runs
   setup.ps1                           the script behind the setup .cmd
 
-Nothing here phones home. The remote works over your own Wi-Fi with no
-internet connection at all.
+No installer is stored in this folder on purpose: a copy here would be a fixed
+version that soon goes stale. The setup script downloads the newest published
+one. To use a copy you already have, drop it in this folder next to setup.ps1 -
+a ToneArtStudioSetup-*.exe found here is used as-is instead of downloading.
+
+Nothing here phones home beyond that download. The remote itself works over
+your own Wi-Fi with no internet connection at all.
