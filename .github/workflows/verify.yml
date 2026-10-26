@@ -1,0 +1,62 @@
+name: verify
+
+# The gate that answers one question: does the app still work?
+#
+# It exists because nothing checked that. Every other workflow here compiles
+# native code or packages a build, so a change that broke the interface - or the
+# desktop shell that serves it - stayed green through the whole pipeline and was
+# only found by installing the result and seeing a blank window.
+#
+# The order matters. The shell smoke test starts the real desktop main process
+# and makes it serve `dist/` over loopback, so `dist/` has to have been built by
+# the step before it. Run on its own, against a missing or stale `dist/`, it
+# passes while proving nothing.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build the interface
+        run: npm run build
+
+      - name: Desktop shell smoke test
+        run: npm run test:desktop
+
+      - name: Report what was verified
+        if: always()
+        run: |
+          {
+            echo '### verify'
+            echo ''
+            echo '- typecheck: `npm run typecheck`'
+            echo '- unit tests: `npm test`'
+            echo '- build: `npm run build`'
+            echo '- desktop shell: `npm run test:desktop` (serves the built interface over loopback)'
+          } >> "$GITHUB_STEP_SUMMARY"

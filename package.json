@@ -12,6 +12,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "test:desktop": "node desktop/smoke-test.cjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run test:desktop",
     "remote": "node server/remote.mjs",
     "desktop": "electron .",
     "dist:win": "npm run build && electron-builder --win --x64 --publish never"
