@@ -19,10 +19,20 @@ const assert = require('node:assert');
 
 const calls = { loadedUrl: null, shown: false, menu: false };
 
+const FAKE_DISPLAY = { id: 1, workArea: { x: 0, y: 0, width: 1920, height: 1080 } };
+
 class FakeWebContents {
   constructor() {
     this.handlers = {};
     this.windowOpenHandler = null;
+    // The shell clears the offline cache before the first load. It has to be
+    // here: without it the shell logs a failure on every launch, and a test
+    // that only ever sees the fallback path cannot tell that apart from a
+    // broken build.
+    this.session = {
+      cleared: 0,
+      clearStorageData() { this.cleared += 1; return Promise.resolve(); },
+    };
   }
 
   on(event, handler) { this.handlers[event] = handler; }
@@ -76,6 +86,20 @@ const fakeElectron = {
     on: () => {},
     quit: () => {},
     getPath: () => path.join(require('node:os').tmpdir(), 'tone-art-smoke'),
+  },
+  // The shell registers the panel IPC channel as it loads. Without ipcMain the
+  // main process throws before any window exists, which is exactly the failure
+  // this test exists to catch.
+  ipcMain: {
+    handlers: {},
+    handle(channel, handler) { this.handlers[channel] = handler; },
+  },
+  // One 1920x1080 display: the shell reads its work area to size the window and
+  // asks for the window's own display when it opens a floating panel.
+  screen: {
+    getPrimaryDisplay: () => FAKE_DISPLAY,
+    getDisplayMatching: () => FAKE_DISPLAY,
+    getAllDisplays: () => [FAKE_DISPLAY],
   },
   BrowserWindow: FakeBrowserWindow,
   Menu: {

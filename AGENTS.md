@@ -15,6 +15,24 @@ A task is finished when the person asking can download and use the result:
 A passing CI run, a merged commit, a rebuilt artifact or a written document are
 progress, never the finish line. Report them as progress.
 
+**Never end a message on "done" without the download link in it.** The message
+that reports completion carries: the direct URL, the file size, and the SHA-256
+checked against the published sums file. If the link is not in the message, the
+work is not finished, however green everything looked.
+
+### Words that mean something specific here
+
+Use these exactly, because the difference between them is the whole complaint:
+
+| Word | Means |
+|---|---|
+| **verified** | I downloaded the published file and its hash matched |
+| **built** | a compiler or packager produced it; nobody has downloaded it |
+| **running** | a workflow is going; the result is unknown |
+| **planned** | not started |
+
+"Built" is not "verified", and "the workflow is green" is neither.
+
 ## 2. One download is the whole product
 
 `ToneArtStudio-ALL.zip` must contain **everything**:
@@ -74,8 +92,33 @@ to know which of several installers to download first.
   went well. Both, every time.
 - If a request is ambiguous, pick the reading that produces a runnable result
   soonest, state the assumption in one line, and continue.
+- Never ask the owner to re-state a request. A repeated request means the last
+  answer failed one of these rules; find which one and fix the cause.
 
-## 8. Scope
+## 8. The verification gate
+
+One command decides whether a change is shippable:
+
+```
+npm run verify
+```
+
+It runs the typecheck, the unit tests, the production build and the desktop
+shell smoke test, in that order - the smoke test serves the freshly built
+`dist/`, so it must come last. `.github/workflows/verify.yml` runs the same four
+steps on every push.
+
+This exists because it did not before: every other workflow compiled native code
+or packaged a build, so a change that broke the interface, or the shell that
+serves it, stayed green all the way to a published installer and was only found
+by installing it. A check that is not wired into CI is a check that already
+rotted - `desktop/smoke-test.cjs` had been broken since `ipcMain` and `screen`
+were added to the shell, and nothing noticed.
+
+When a test harness cannot run because an API it fakes has moved on, update the
+harness. Do not delete the test, and do not route around it.
+
+## 9. Scope
 
 Build the smallest complete version of what was asked, plus what it needs to
 run. No extra features, no refactors nobody asked for, no polish before the
