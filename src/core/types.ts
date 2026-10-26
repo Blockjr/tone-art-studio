@@ -27,6 +27,19 @@ export type DeviceType =
   /** the AI Mix & Master insert: analysis and correction, no audio path of its own */
   | 'aimix';
 
+/**
+ * MIDI effects sit in front of the instrument and transform notes before they
+ * are played, the way Ableton's MIDI effect devices do.
+ */
+export type MidiFxType = 'chord' | 'scale' | 'arp' | 'velocity' | 'pitch' | 'notelength';
+
+export interface MidiFxState {
+  id: string;
+  type: MidiFxType;
+  enabled: boolean;
+  params: Record<string, number>;
+}
+
 export interface DeviceState {
   id: string;
   type: DeviceType;
@@ -139,6 +152,8 @@ export interface Track {
   preSends: [boolean, boolean, boolean, boolean];
   instrument: InstrumentState | null;
   devices: DeviceState[];
+  /** MIDI effects in front of the instrument; absent means none */
+  midiFx?: MidiFxState[];
 }
 
 /** One recorded pass. Lives beside the arrangement and is used for comping. */

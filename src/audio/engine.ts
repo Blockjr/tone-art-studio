@@ -1,5 +1,6 @@
 import type { Store } from '../core/store';
 import { clamp, dbToGain } from '../core/time';
+import { applyMidiFx, type MidiNote } from '../core/midifx';
 import { devicePeak } from './devices';
 import { buildGraph, type Graph } from './graph';
 import { applyFadeEnvelope, fadeEnvelope, resolveFades } from './fades';
@@ -440,6 +441,40 @@ export class Engine {
     chain?.instrument?.noteOn(ctx.currentTime + 0.01, pitch, 0.8, duration);
   }
 
+  /**
+   * Plays notes that arrive from a MIDI controller or the computer keyboard.
+   *
+   * The track's MIDI effects run first, so a chord device turns one key into a
+   * chord and an arpeggiator turns a held key into a pattern; every resulting
+   * note is scheduled against the audio clock, which is what keeps an
+   * arpeggio in time instead of drifting with the UI thread.
+   */
+  async playLiveNotes(trackId: string, notes: readonly MidiNote[]): Promise<void> {
+    if (notes.length === 0) return;
+    const ctx = await this.ensureContext();
+    const chain = this.graph?.tracks.get(trackId);
+    if (!chain?.instrument) return;
+
+    const secondsPerBeat = 60 / this.store.project.bpm;
+    const start = ctx.currentTime + 0.02;
+    for (const note of notes) {
+      const when = start + Math.max(0, note.start) * secondsPerBeat;
+      chain.instrument.noteOn(when, note.pitch, note.velocity, Math.max(0.05, note.duration * secondsPerBeat));
+    }
+  }
+
+  /** One note through the track's MIDI effect chain, for live playing. */
+  async liveNote(trackId: string, pitch: number, velocity: number, duration = 2): Promise<void> {
+    const track = this.store.project.tracks.find((entry) => entry.id === trackId);
+    const secondsPerBeat = 60 / this.store.project.bpm;
+    const notes = applyMidiFx(
+      track?.midiFx,
+      [{ pitch, start: 0, duration, velocity }],
+      { secondsPerBeat },
+    );
+    await this.playLiveNotes(trackId, notes);
+  }
+
   trackPeak(trackId: string): number {
     const chain = this.graph?.tracks.get(trackId);
     if (!chain?.analyser || !chain.meter) return 0;
@@ -788,7 +823,22 @@ export class Engine {
         if (clip.trackId !== track.id) continue;
 
         if (clip.kind === 'midi' && chain.instrument) {
-          for (const note of clip.notes) {
+          // MIDI effects sit in front of the instrument: the notes scheduled
+          // here are the device chain's output, not the stored notes.
+          const played = track.midiFx?.length
+            ? applyMidiFx(
+                track.midiFx,
+                clip.notes.map((note) => ({
+                  pitch: note.pitch,
+                  start: note.start,
+                  duration: note.duration,
+                  velocity: note.velocity,
+                })),
+                { secondsPerBeat },
+              )
+            : clip.notes;
+
+          for (const note of played) {
             const elapsed = this.elapsedForSongBeat(clip.start + note.start, from);
             if (!Number.isFinite(elapsed) || elapsed < from - 1e-6 || elapsed >= to) continue;
             const when = base + elapsed * secondsPerBeat;

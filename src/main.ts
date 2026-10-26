@@ -64,6 +64,7 @@ import { Rack } from './ui/rack';
 import { AssistantPanel } from './ui/agent';
 import { RemotePanel } from './ui/remote';
 import { NativePanel } from './ui/native';
+import { MidiPanel } from './ui/midi';
 import { TakePanel } from './ui/comp';
 import {
   InputRecorder,
@@ -125,6 +126,41 @@ const timeline = new Timeline(
   { onEditNotes: (clipId) => piano.open(clipId) },
 );
 const piano = new PianoRoll(store, engine, { onBounce: (clipId) => void bounceClip(clipId) });
+
+/**
+ * Opens the note editor for the selected MIDI clip, or for the first MIDI clip
+ * on the selected track when nothing is selected. The fallback matters because
+ * "no clip selected" used to make the Notes button and Enter do nothing at all,
+ * which reads as a missing feature rather than a missing selection.
+ */
+function openNotes(): boolean {
+  const selected = store.selectedClip;
+  if (selected?.kind === 'midi') {
+    piano.open(selected.id);
+    return true;
+  }
+
+  const track = store.selectedTrack;
+  const fallback = track
+    ? store.project.clips.find((clip) => clip.trackId === track.id && clip.kind === 'midi')
+    : store.project.clips.find((clip) => clip.kind === 'midi');
+
+  if (!fallback) {
+    toast('This project has no MIDI clips yet. Double-click a MIDI track to make one.');
+    return false;
+  }
+
+  store.selectClip(fallback.id);
+  piano.open(fallback.id);
+  return true;
+}
+
+const midiPanel = new MidiPanel(store, engine, {
+  onOpenNotes: () => {
+    openNotes();
+  },
+  toast,
+});
 const mixer = new Mixer(store, engine, $('mixer-strips'), {
   onOpenMasterAi: () => assistant.openMixAi('master'),
 });
@@ -198,6 +234,16 @@ assistant.mount();
 piano.mount();
 remotePanel.mount();
 nativePanel.mount();
+midiPanel.mount();
+
+// A panel window opened from the desktop shell (`?panel=midi`) shows that one
+// panel on its own, which is how a panel is moved to a second screen.
+const detachedPanel = new URLSearchParams(window.location.search).get('panel');
+if (detachedPanel) {
+  document.body.classList.add('is-detached');
+  if (detachedPanel === 'midi') midiPanel.openPanel();
+  else if (detachedPanel === 'rig') nativePanel.open();
+}
 takePanel.mount();
 
 // The top bar scrolls sideways at narrow widths. Its scrollbar is hidden, so a
@@ -214,31 +260,49 @@ topbar?.addEventListener(
   { passive: false },
 );
 
+type FloatingPanel = 'assistant' | 'remote' | 'rig' | 'midi' | 'preview' | 'takes';
+
+/**
+ * Only one floating panel on screen at a time.
+ *
+ * Every panel docks into the same right-hand slot, so opening a second one
+ * without closing the first stacked two panels exactly on top of each other:
+ * the one underneath was unreachable, and its close button could not be found.
+ * Besides, a panel covering the rack hid controls the user was reaching for.
+ */
+function closeFloating(except?: FloatingPanel): void {
+  if (except !== 'assistant') assistant.close();
+  if (except !== 'remote') remotePanel.close();
+  if (except !== 'rig') nativePanel.close();
+  if (except !== 'midi') midiPanel.close();
+  if (except !== 'preview') previewPanel.close();
+  if (except !== 'takes') takePanel.close();
+}
+
 $('btn-assistant').addEventListener('click', () => {
-  remotePanel.close();
-  nativePanel.close();
+  closeFloating('assistant');
   assistant.toggleMix();
 });
 $('btn-help').addEventListener('click', () => {
-  remotePanel.close();
-  nativePanel.close();
+  closeFloating('assistant');
   assistant.openHelp();
 });
 $('btn-remote').addEventListener('click', () => {
-  assistant.close();
-  nativePanel.close();
+  closeFloating('remote');
   remotePanel.toggle();
 });
 $('btn-rig').addEventListener('click', () => {
-  assistant.close();
-  remotePanel.close();
+  closeFloating('rig');
   nativePanel.toggle();
 });
 
+$('btn-midi').addEventListener('click', () => {
+  closeFloating('midi');
+  midiPanel.toggle();
+});
+
 $('btn-preview').addEventListener('click', () => {
-  assistant.close();
-  remotePanel.close();
-  nativePanel.close();
+  closeFloating('preview');
 
   if (!previewPanel.element.classList.contains('is-open') && previewPanel.loadSelectedClip()) {
     previewPanel.open();
@@ -578,6 +642,7 @@ async function startRecording(): Promise<void> {
 
   if (!track) {
     toast('Arm an audio track to record');
+    closeFloating('takes');
     takePanel.open();
     return;
   }
@@ -911,8 +976,7 @@ $('btn-record').addEventListener('click', () => {
 syncRecordButton();
 
 $('btn-takes').addEventListener('click', () => {
-  nativePanel.close();
-  remotePanel.close();
+  closeFloating('takes');
   takePanel.toggle();
 });
 
@@ -1051,12 +1115,7 @@ followSelect.addEventListener('change', () => {
 $('btn-zoom-in').addEventListener('click', () => timeline.zoomBy(1.25));
 $('btn-zoom-out').addEventListener('click', () => timeline.zoomBy(1 / 1.25));
 $('btn-notes').addEventListener('click', () => {
-  const clip = store.selectedClip;
-  if (!clip || clip.kind !== 'midi') {
-    toast('Select a MIDI clip to edit its notes');
-    return;
-  }
-  piano.open(clip.id);
+  openNotes();
 });
 $('btn-bounce').addEventListener('click', () => void bounceClip());
 $('btn-split').addEventListener('click', () => timeline.splitSelected());
@@ -2011,6 +2070,16 @@ document.addEventListener(
 
 // ---------------------------------------------------------------- keyboard
 
+// A key released while the MIDI panel is open has to end its note, even if the
+// panel was closed in between: the note-off is not a transport shortcut.
+document.addEventListener('keyup', (event) => {
+  if (!midiPanel.visible) return;
+  const target = event.target as HTMLElement | null;
+  const tag = target?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (midiPanel.handleKey(event.key, false, false)) event.preventDefault();
+});
+
 document.addEventListener('keydown', (event) => {
   const target = event.target as HTMLElement | null;
   // Typing fields keep every key. Checkboxes, sliders and buttons do not: a
@@ -2025,6 +2094,13 @@ document.addEventListener('keydown', (event) => {
   if (typing) return;
   // Arrow keys still belong to a focused slider; every other key is global.
   if (tag === 'INPUT' && inputType === 'range' && event.key.startsWith('Arrow')) return;
+
+  // While the MIDI panel is open its letter keys play notes, so a key press
+  // does not also fire a transport shortcut.
+  if (midiPanel.visible && midiPanel.handleKey(event.key, true, event.repeat)) {
+    event.preventDefault();
+    return;
+  }
 
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 'z') {
@@ -2407,3 +2483,7 @@ const unlock = (): void => {
   window.removeEventListener('pointerdown', unlock);
 };
 window.addEventListener('pointerdown', unlock, { once: true });
+
+// The interface is fully wired by now. index.html watches for this flag and
+// shows a readable banner instead of a silent dead page if it never arrives.
+document.documentElement.dataset.appReady = 'true';

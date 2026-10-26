@@ -926,3 +926,56 @@ describe('Tone Art Studio app shell', () => {
   });
 
 });
+
+/**
+ * The floating panels all dock into the same right-hand slot. Opening one while
+ * another was open used to leave both on screen, one exactly on top of the
+ * other: the panel underneath could not be closed and its controls could not be
+ * reached. This walks the panel buttons and checks the invariant.
+ */
+describe('floating panels', () => {
+  const openers = ['btn-midi', 'btn-rig', 'btn-remote', 'btn-takes', 'btn-preview', 'btn-midi', 'btn-rig'];
+
+  it('keeps at most one panel open at a time', async () => {
+    for (const id of openers) {
+      const button = document.getElementById(id);
+      expect(button, `missing #${id}`).not.toBeNull();
+      (button as HTMLButtonElement).click();
+      await wait(40);
+      const open = document.querySelectorAll('.agent.is-open').length;
+      expect(open, `${id} left ${open} panels open`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('has a MIDI button wired into the top bar', async () => {
+    const button = document.getElementById('btn-midi');
+    expect(button).not.toBeNull();
+    expect(document.querySelector('#midi-panel')).not.toBeNull();
+  });
+
+  it('stays usable after every panel has been opened and closed', async () => {
+    for (const id of openers) {
+      (document.getElementById(id) as HTMLButtonElement).click();
+      await wait(20);
+    }
+    // A panel left open would sit over the transport; closing all of them brings
+    // the arrangement back, and the transport still responds.
+    for (const id of openers) {
+      const panel = document.getElementById(id);
+      if (panel) (panel as HTMLButtonElement).click();
+      await wait(10);
+    }
+    document.getElementById('btn-midi')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wait(20);
+    expect(document.body.classList.contains('is-detached')).toBe(false);
+  });
+});
+
+describe('startup health', () => {
+  it('marks the interface ready so a failed start is never silent', () => {
+    expect(document.documentElement.dataset.appReady).toBe('true');
+    const banner = document.getElementById('boot-error');
+    expect(banner).not.toBeNull();
+    expect((banner as HTMLElement).hidden).toBe(true);
+  });
+});

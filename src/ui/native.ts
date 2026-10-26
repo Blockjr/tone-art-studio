@@ -78,9 +78,12 @@ export class NativePanel {
     const title = el('div', 'agent-title');
     title.append(el('strong', '', 'Studio Rig'), el('span', '', 'ASIO · virtual driver · VST3'));
     this.badge = el('span', 'rig-badge', 'browser');
+    const detach = el('button', 'tbtn tbtn-sm', '⧉');
+    detach.title = 'Open this panel in its own window, for a second screen';
+    detach.addEventListener('click', () => this.detach());
     const close = el('button', 'tbtn tbtn-sm', '✕');
     close.addEventListener('click', () => this.close());
-    head.append(dot, title, this.badge, close);
+    head.append(dot, title, this.badge, detach, close);
 
     this.body = el('div', 'agent-body');
 
@@ -256,9 +259,21 @@ export class NativePanel {
 
   // --------------------------------------------------------------- rendering
 
+  /** Opens this panel in its own window; only the desktop shell can do that. */
+  private detach(): void {
+    const host = (window as unknown as { tas?: { openPanel?: (panel: string) => void } }).tas;
+    if (!host?.openPanel) {
+      this.errorLine.textContent = 'Detaching a panel needs the desktop app.';
+      return;
+    }
+    void host.openPanel('rig');
+    this.close();
+  }
+
   private renderBrowserFallback(): void {
-    this.deviceStatus.textContent = 'Web Audio engine (browser build)';
-    this.deviceMeta.textContent = 'ASIO, the virtual driver and VST3 hosting require the desktop build in native/.';
+    this.deviceStatus.textContent = 'Web Audio engine';
+    this.deviceMeta.textContent =
+      'ASIO and VST3 need the native audio engine. This build is playing through the browser audio engine, which cannot open an ASIO driver or host a VST3.';
     this.deviceSelect.disabled = true;
     this.loopbackStatus.textContent = 'Virtual ASIO driver: desktop build only';
     this.loopbackStats.textContent =

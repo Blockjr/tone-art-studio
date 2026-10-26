@@ -80,7 +80,9 @@ of them carry an action button that jumps straight to the screen they describe.
 ## MIDI editing and bounce
 
 Select a MIDI clip and press **Notes**, press `Enter`, or double-click the clip:
-the piano roll opens over the arrangement. Click empty grid to draw a note, drag
+the piano roll opens over the arrangement. With nothing selected, **Notes** opens
+the first MIDI clip on the selected track instead of doing nothing, so the editor
+is always one click away. Click empty grid to draw a note, drag
 to move it in time and pitch, drag the right edge to stretch it, `Delete` to
 remove it, arrows to nudge by the grid or by a semitone. Quantize, ±12 transpose
 and the velocity slider apply to the selection, or to every note when nothing is
@@ -97,6 +99,48 @@ The MIDI track is kept, so the print is non-destructive and `Ctrl+Z` removes it.
 `src/audio/bounce.ts` holds the plan and render, `src/core/midi.ts` the note
 operations, `src/ui/piano.ts` the editor, and `tests/midi.test.ts` /
 `tests/bounce.test.ts` check them.
+
+## MIDI input, controllers and MIDI effects
+
+**MIDI** in the top bar opens the MIDI panel. Press **Enable MIDI inputs** once:
+every connected input is listed with the two switches a DAW needs — **Track**
+sends notes and controllers to the selected track, **Remote** lets the same port
+drive mapped controls. A newly plugged keyboard is enabled for Track straight
+away, and inputs are re-read whenever the controller is plugged in or removed.
+
+With the panel open the computer keyboard plays: `A`–`L` are the white keys from
+C, `W E T Y U` the black ones, `Z`/`X` shift the octave and `C`/`V` the velocity.
+While it is open those keys play instead of firing transport shortcuts, so
+playing a chord never moves the playhead.
+
+**MIDI effects** sit in front of the instrument, on the selected track, and run
+for live input and for clip playback alike:
+
+| Device | What it does |
+|---|---|
+| Chord | Adds up to six pitches to each note. Shifts are ±36 semitones, with velocity scaling, chance and strum |
+| Scale | Remaps notes into a scale (root, 13 scales, transpose, fold, range) so wrong notes come out right |
+| Arpeggiator | Turns a held chord into a pattern: six styles, rate, gate, octaves, repeats, groove |
+| Velocity | Maps input velocity into an output range, with Clip/Gate/Fixed, random and drive |
+| Pitch | Transposes ±128 semitones and blocks, folds or limits notes that leave the range |
+| Note Length | Scales note length, with a gate |
+
+Each device has a power button, its parameters as sliders with live values, and
+Reset. Parameter ranges follow Ableton Live 12's MIDI effect reference where it
+documents them (Chord ±36, Velocity 1–127 with Clip/Gate/Fixed, Pitch
+Block/Fold/Limit). The transform is pure code in `src/core/midifx.ts`, checked by
+`tests/midifx.test.ts`, so a device can be dropped into the chain without
+changing the engine; the panel itself is `src/ui/midi.ts`, checked by
+`tests/midipanel.test.ts`.
+
+**Controller mapping:** choose a control, press **Learn**, then move a knob. CCs
+bind to master volume, the selected track's volume or pan, or its send A, and the
+mapping is kept in the browser's storage. Mapped messages are consumed by the
+mapping and not also played as notes.
+
+Live notes are one-shots with the instrument's release tail: a controller's
+note-off does not cut a note short yet, so a held key rings out. Per-voice
+note-off is the next step for the instruments.
 
 ## Workspace, multiple screens and scaling
 

@@ -13,7 +13,7 @@
 ;   ..\assets\brand\tone-art.ico, wizard-large.bmp, wizard-small.bmp
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.3.0"
 #endif
 
 #define MyAppName "Tone Art Studio"

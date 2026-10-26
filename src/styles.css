@@ -34,7 +34,9 @@
   --green: #22c98a;
   --browser-w: 240px;
   --rack-w: 340px;
-  --mixer-h: 520px;
+  /* The mixer is tall on a big screen and still leaves an arrangement to work
+     in on a laptop: a fixed 520px left nothing above it below ~900px tall. */
+  --mixer-h: clamp(190px, 34vh, 520px);
   --track-h: 84px;
   --header-w: 208px;
   --ruler-h: 48px;
@@ -204,6 +206,27 @@ button { cursor: pointer; }
 .master-meter { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
 .master-meter canvas { width: 84px; height: 10px; border-radius: 3px; border: 1px solid var(--line); background: #0a0c10; }
 .master-meter span { font-family: var(--mono); font-size: 9px; color: var(--dim); width: 42px; text-align: right; }
+
+/*
+ * Scroll containers inside a flex column only scroll if they are allowed to
+ * shrink. Without min-height:0 their min-content height wins, the panel clips
+ * at its bottom edge, and the list looks unscrollable. This is why the browser
+ * panel could have more content than fit and still refuse to scroll.
+ */
+.browser-body,
+.browser-files,
+.rig-list,
+.agent-body,
+.rack-body,
+.explorer-list,
+.mixer-body,
+.arrange-body,
+.piano-scroll,
+.chain-templates,
+.preview-body {
+  min-height: 0;
+  overscroll-behavior: contain;
+}
 
 /* ---------------------------------------------------------------- main */
 .main {
@@ -2123,3 +2146,173 @@ body.is-reordering .track-grip { cursor: grabbing; }
   font-size: 9.5px; line-height: 1.35;
 }
 .remote-steps { display: grid; gap: 5px; }
+
+/* --------------------------------------------------------------- MIDI panel */
+
+/* The panel itself rides on .agent.rig-panel, so it opens, scrolls and stacks
+   exactly like Studio Rig. These rules only describe what is new in it. */
+.midi-panel .agent-body { gap: 9px; }
+
+.midi-activity {
+  min-height: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue, #5aa9e6);
+}
+
+.midi-readout {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.midi-key { flex: 1; font-size: 10px; color: var(--dim); }
+
+.midi-port {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px;
+  border: 1px solid var(--line, #1d2430);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.midi-port-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.midi-port-name strong { font-size: 11px; color: var(--text-strong); }
+.midi-port-name span { font-size: 9px; color: var(--dim-2, #6b7685); }
+.midi-port-off { color: var(--amber) !important; }
+
+.midi-switch { gap: 4px; font-size: 9.5px; }
+.midi-switch input { margin: 0; }
+
+.midi-map {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  padding: 4px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.midi-map strong { color: var(--text-strong); }
+.midi-map span { flex: 1; color: var(--dim); }
+
+/* ------------------------------------------------------- MIDI effect devices */
+
+.midi-fx-list { max-height: none; }
+
+.midi-fx {
+  border: 1px solid var(--line, #1d2430);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(90, 169, 230, 0.06), rgba(0, 0, 0, 0.16));
+  padding: 7px 8px 9px;
+}
+
+.midi-fx.is-off { opacity: 0.45; }
+
+.midi-fx-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.midi-fx-power {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line, #1d2430);
+  background: transparent;
+  color: var(--green);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.midi-fx-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.midi-fx-name strong { font-size: 11px; color: var(--text-strong); }
+.midi-fx-name span {
+  font-size: 9px;
+  color: var(--dim-2, #6b7685);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.midi-fx-params {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.midi-fx-param { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.midi-fx-param-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--dim);
+}
+
+.midi-fx-value { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+
+.midi-fx-slider {
+  width: 100%;
+  height: 14px;
+  accent-color: var(--blue, #5aa9e6);
+  cursor: pointer;
+}
+
+/* A detached panel window shows the panel alone, with no app chrome. */
+body.is-detached { background: #08090c; }
+body.is-detached .topbar,
+body.is-detached .main,
+body.is-detached .drawer-backdrop { display: none !important; }
+body.is-detached .agent.rig-panel {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  transform: none !important;
+  display: flex !important;
+}
+
+/*
+ * A panel that is closed is moved off-screen but still exists. Without this it
+ * can still take the pointer along the strip it occupies, so a click meant for
+ * the rack or the top bar goes nowhere — the app looks like its buttons are
+ * dead. Only the open panel accepts input.
+ */
+.agent { pointer-events: none; }
+.agent.is-open { pointer-events: auto; }
+
+/* A failure to start is stated on screen, over everything, in words. */
+.boot-error {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 400;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(244, 63, 94, 0.6);
+  background: #2a0d14;
+  color: #ffd9df;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+.boot-error[hidden] { display: none; }
