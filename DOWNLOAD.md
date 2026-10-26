@@ -10,15 +10,15 @@ The installer in every archive is the same file, `ToneArtStudioSetup-0.1.0.exe`,
 | 2 | [ToneArtStudio-2-Desktop-and-Remote-Kit.zip](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudio-2-Desktop-and-Remote-Kit.zip) | 7.3 MB | installer + tablet remote + a script that puts **both icons on your Desktop** |
 | 3 | [ToneArtStudio-3-Source-Code.zip](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudio-3-Source-Code.zip) | 8.3 MB | the finished code (`npm ci && npm run build` runs from a clean extract) |
 | 4 | [ToneArtStudio-4-Web-Build.zip](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudio-4-Web-Build.zip) | 350 KB | the compiled browser build |
-| - | [ToneArtStudio-ALL.zip](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudio-ALL.zip) | 23 MB | all four above in one download |
-| - | [ToneArtStudioSetup-0.1.0.exe](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe) | 7.6 MB | just the installer |
+| — | [ToneArtStudio-ALL.zip](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudio-ALL.zip) | 23 MB | all four above in one download |
+| — | [ToneArtStudioSetup-0.1.0.exe](https://github.com/Blockjr/tone-art-studio/releases/download/v0.1.0/ToneArtStudioSetup-0.1.0.exe) | 7.6 MB | just the installer |
 
 ## Install it
 
 1. Download zip 2 (or 1, or just the `.exe`).
 2. Extract it, then double-click **Tone Art Studio Desktop Setup.cmd** (kit) or
    **ToneArtStudioSetup-0.1.0.exe** (installer).
-3. If Windows says "Windows protected your PC", click **More info -> Run anyway**.
+3. If Windows says *"Windows protected your PC"*, click **More info → Run anyway**.
    The setup is not code-signed, so SmartScreen always says that for it.
 4. Leave the audio-driver task ticked; it registers the Tone Art Virtual ASIO driver.
 5. Start **Tone Art Studio** from the Start menu or the Desktop icon.

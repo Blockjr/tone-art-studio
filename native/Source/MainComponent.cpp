@@ -73,7 +73,7 @@ MainComponent::MainComponent()
 
         if (uiDirectory.isDirectory())
             options = options.withResourceProvider ([this] (const juce::String& path)
-                                                    { return getResource (path); });
+                                                     { return getResource (path); });
 
         webView = std::make_unique<juce::WebBrowserComponent> (options);
         addAndMakeVisible (*webView);

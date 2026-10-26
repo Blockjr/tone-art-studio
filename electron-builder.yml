@@ -1,0 +1,55 @@
+# Packaging for the installed Windows app.
+#
+# The output name is deliberately the one the release pipeline already
+# publishes, so `dist-installer/ToneArtStudioSetup-<version>.exe` is the program
+# a user downloads and runs. One file: double-click, Next, Next, Finish.
+
+appId: com.toneartstudio.desktop
+productName: Tone Art Studio
+copyright: Tone Art Studio
+
+directories:
+  output: dist-installer
+  buildResources: assets/brand
+
+# Only what the app reads at runtime. Source, tests and the native host are not
+# part of the installed program.
+files:
+  - desktop/**
+  - dist/**
+  - server/**
+  - remote/**
+  - public/**
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+
+# The tablet bridge is loaded as a module and reads the tablet page from disk,
+# so those folders stay as real files rather than a packed archive.
+asarUnpack:
+  - server/**
+  - remote/**
+  - public/**
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/brand/tone-art-512.png
+  # No code signing certificate: Windows shows its usual "unknown publisher"
+  # notice on first run. That is expected, not a broken download.
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Tone Art Studio
+  uninstallDisplayName: Tone Art Studio
+  artifactName: ToneArtStudioSetup-${version}.${ext}
+  deleteAppDataOnUninstall: false
+  # Keeps the folder the user picked on upgrade instead of resetting it.
+  allowElevation: true

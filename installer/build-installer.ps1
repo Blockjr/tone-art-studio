@@ -174,6 +174,21 @@ if (-not (Test-Path $dll)) {
     Write-Warning 'HybridVirtualAsio.dll is missing; the installer will skip the driver.'
 }
 
+# WebView2 draws the interface. Fetch Microsoft's bootstrapper so setup can
+# install the runtime on a PC that never received it; without this file setup
+# still completes and the app explains what is missing instead of showing a
+# blank window.
+$webviewSetup = Join-Path $buildDir 'MicrosoftEdgeWebView2Setup.exe'
+if (-not (Test-Path $webviewSetup)) {
+    Write-Step 'Fetching the Microsoft WebView2 bootstrapper'
+    $webviewUrl = 'https://go.microsoft.com/fwlink/p/?LinkId=' + '2124703'
+    curl.exe -sSL --max-time 300 -o $webviewSetup $webviewUrl
+
+    if (-not (Test-Path $webviewSetup)) {
+        Write-Warning 'The WebView2 bootstrapper could not be downloaded; setup still works and the app explains what is missing.'
+    }
+}
+
 Write-Step "Compiling the installer"
 # Both locations are optional: ${env:ProgramFiles(x86)} is unset on 32-bit
 # Windows and LOCALAPPDATA is unset in some service contexts, so test each one

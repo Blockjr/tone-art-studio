@@ -32,7 +32,9 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-OutputDir=..\dist-installer
+; The installed desktop app (electron-builder) is what the release publishes,
+; so the native host writes beside it instead of over it.
+OutputDir=..\dist-native
 OutputBaseFilename=ToneArtStudioSetup-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
