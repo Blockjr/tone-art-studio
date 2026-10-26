@@ -7,15 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Upload the release asset to a temporary public host
+      - name: Publish a public copy of the installer
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p out
           gh release download v0.1.0 --pattern '*.exe' --dir out --clobber
-          ls -l out
           file=$(ls out/*.exe | head -1)
-          url=$(curl -sS --max-time 300 -F reqtype=fileupload -F time=72h -F "fileToUpload=@$file" https://litterbox.catbox.moe/resources/internals/api.php)
+          echo "asset: $file"
+          cd out && zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")" && cd ..
+          url=$(curl -sS --max-time 300 -F reqtype=fileupload -F "fileToUpload=@out/ToneArtStudioSetup-0.1.0.zip" https://catbox.moe/user/api.php)
           echo "URL=$url"
           { echo "$url"; sha256sum "$file" | cut -d' ' -f1; } > installer-link.txt
           cat installer-link.txt
@@ -24,5 +25,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add installer-link.txt
-          git commit -m 'Record the temporary public installer link' || true
+          git commit -m 'Record the public installer link' || true
           git push
