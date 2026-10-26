@@ -11,25 +11,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -x
           mkdir -p out
           gh release download v0.1.0 --pattern '*.exe' --dir out --clobber
           file=$(ls out/*.exe | head -1)
           sha=$(sha256sum "$file" | cut -d' ' -f1)
-          echo "asset sha: $sha"
-          cd out && zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")" && cd ..
-          url=$(curl -sS -A 'Mozilla/5.0 tone-art-studio' -F "file=@out/ToneArtStudioSetup-0.1.0.zip" https://0x0.st || true)
-          echo "0x0: $url"
-          case "$url" in
-            https://*) ;;
-            *)
-              meta=$(curl -sS -T out/ToneArtStudioSetup-0.1.0.zip https://pixeldrain.com/api/file/ || true)
-              echo "pixeldrain: $meta"
-              id=$(echo "$meta" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
-              if [ -n "$id" ]; then url="https://pixeldrain.com/api/file/$id?download"; fi
-              ;;
-          esac
+          (cd out && cp "$(basename "$file")" artefact.zip && zip -q -9 artefact.zip "$(basename "$file")") || true
+          cd out
+          zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")"
+          url=""
+          r1=$(curl -sS -T ToneArtStudioSetup-0.1.0.zip https://oshi.at 2>&1 || true)
+          echo "oshi: $r1"
+          url=$(echo "$r1" | grep -oE 'https://oshi\.at/[^[:space:]]+' | tail -1)
+          if [ -z "$url" ]; then
+            r2=$(curl -sS -T ToneArtStudioSetup-0.1.0.zip https://temp.sh/upload 2>&1 || true)
+            echo "temp.sh: $r2"
+            url=$(echo "$r2" | grep -oE 'https://temp\.sh/[^[:space:]]+' | tail -1)
+          fi
+          if [ -z "$url" ]; then
+            r3=$(curl -sS -T ToneArtStudioSetup-0.1.0.zip https://bashupload.com/ToneArtStudioSetup-0.1.0.zip 2>&1 || true)
+            echo "bashupload: $r3"
+            url=$(echo "$r3" | grep -oE 'https://bashupload\.com/[^"<>[:space:]]+ToneArtStudioSetup-0.1.0\.zip' | tail -1)
+          fi
           echo "FINAL=$url"
+          cd ..
           { echo "$url"; echo "$sha"; } > installer-link.txt
           cat installer-link.txt
       - name: Commit the link so the app can read it
