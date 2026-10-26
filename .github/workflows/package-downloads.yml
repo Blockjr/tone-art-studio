@@ -1,18 +1,23 @@
 name: package-downloads
 
-# Packs the four delivery zips around the installer that is already published and
-# attaches them to that release.
+# Packs the complete delivery set around the installers that are already
+# published and attaches it to that release.
 #
-# Nothing here pins a version. The tag, the installer's name and the hash it is
-# checked against all come from package.json and the release's own
-# SHA256SUMS.txt, so a run after any release packs that release. The previous
-# form of this workflow hardcoded the 0.1.0 tag, the 0.1.0 file name and a
-# 0.1.0 hash, which meant it could only ever rebuild one old release - and it
-# would have failed its own checksum gate the moment that asset changed.
+# Nothing here pins a version. The tag, the file names and the hashes all come
+# from package.json and the release's own SHA256SUMS.txt, so a run after any
+# release packs that release.
 #
-# The installer is fetched from the release asset and verified against the hash
-# the release published before it is put inside a zip, so a stale or truncated
-# download can never be packed into a kit.
+# Two mistakes this file has already made and must not make again:
+#
+#   - it hardcoded the 0.1.0 tag, name and hash, so it could only ever rebuild
+#     one old release;
+#   - ALL.zip only contained the app, so the "everything" download was missing
+#     the native engine (ASIO, VST3, the driver) and the driver on its own. That
+#     is the bug this file now exists to prevent: everything published goes in.
+#
+# Every installer is fetched from the release and verified against the hash the
+# release published before it is packed, and a missing expected file fails the
+# run instead of silently shipping a smaller bundle.
 
 on:
   workflow_dispatch:
@@ -31,29 +36,38 @@ jobs:
           node-version: "20"
           cache: npm
 
-      - name: Fetch and verify the published installer
+      - name: Fetch and verify every published build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
           tag="v$version"
-          exe="ToneArtStudioSetup-$version.exe"
+          app="ToneArtStudioSetup-$version.exe"
+          host="ToneArtStudioHostSetup-$version.exe"
+          driver="ToneArtVirtualAsio-$version.zip"
 
           {
             echo "VERSION=$version"
             echo "TAG=$tag"
-            echo "EXE=$exe"
+            echo "APP=$app"
+            echo "HOST=$host"
+            echo "DRIVER=$driver"
           } >> "$GITHUB_ENV"
 
           mkdir -p build/exe
-          gh release download "$tag" --pattern "$exe" --dir build/exe
+          gh release download "$tag" --pattern 'ToneArtStudio*' --dir build/exe
           gh release download "$tag" --pattern 'SHA256SUMS.txt' --dir build/exe
 
-          if [ ! -f "build/exe/$exe" ]; then
-            echo "::error::$tag does not carry $exe, so there is nothing to pack"
-            exit 1
-          fi
+          # The native engine and the app are both the product: one is the ASIO
+          # DAW, the other is the interface and the tablet remote. Either one
+          # missing means the bundle would be incomplete, so this fails here.
+          for required in "$app" "$host"; do
+            if [ ! -f "build/exe/$required" ]; then
+              echo "::error::$tag does not carry $required, so the bundle would be incomplete"
+              exit 1
+            fi
+          done
 
           # The sums file is written on Windows, so it arrives with CRLF line
           # endings: strip the carriage returns before checking, or the file name
@@ -61,7 +75,13 @@ jobs:
           #
           # The release's own sums file is the source of truth here, which is why
           # this cannot disagree with the hash a user would read on the release.
-          ( cd build/exe && tr -d '\r' < SHA256SUMS.txt | grep -F "  $exe" | sha256sum -c - )
+          for file in "$app" "$host" "$driver"; do
+            if [ -f "build/exe/$file" ]; then
+              tr -d '\r' < build/exe/SHA256SUMS.txt | grep -F "  $file" | ( cd build/exe && sha256sum -c - )
+            else
+              echo "::warning::$file is not in $tag; the bundle notes it is unavailable"
+            fi
+          done
           ls -l build/exe
 
       - name: Build the web UI
@@ -72,26 +92,31 @@ jobs:
           set -euo pipefail
           ws=$GITHUB_WORKSPACE
           out=$ws/build/out
-          exe=$ws/build/exe/$EXE
+          exe=$ws/build/exe/$APP
           mkdir -p "$out"
 
+          # ---- 1. the app installer -------------------------------------------
           d=$ws/build/1/ToneArtStudio-1-App-Installer
           mkdir -p "$d"
           cp "$exe" "$d/"
           printf '%s\r\n' \
             "TONE ART STUDIO $VERSION - WINDOWS APP" \
             '' \
-            "1. Double-click $EXE." \
+            "1. Double-click $APP." \
             '2. If Windows says "Windows protected your PC", click More info, then Run anyway.' \
             '3. Click Next through the wizard.' \
             '4. Start "Tone Art Studio" from the Start menu or the Desktop icon.' \
             '' \
             'The app runs locally: no account, no sign-in, no internet needed.' \
-            'For ASIO, install ToneArtStudioHostSetup from the same release.' \
+            '' \
+            'FOR ASIO: install the engine from ToneArtStudio-5-Engine-ASIO-Driver.zip' \
+            'as well. This app plays through its own browser engine; the engine is' \
+            'the one that opens an ASIO device and hosts VST3 plugins.' \
             > "$d/INSTALL-WINDOWS.txt"
-          grep -F "  $EXE" "$ws/build/exe/SHA256SUMS.txt" | tr -d '\r' > "$d/SHA256.txt"
+          grep -F "  $APP" "$ws/build/exe/SHA256SUMS.txt" | tr -d '\r' > "$d/SHA256.txt"
           (cd "$ws/build/1" && zip -qr "$out/ToneArtStudio-1-App-Installer.zip" .)
 
+          # ---- 2. the desktop kit: app + tablet remote + both icons -----------
           # The kit is shipped without an installer on purpose: its setup script
           # downloads the newest published one. Dropping this release's copy
           # beside it means the double-click flow works offline as well.
@@ -100,9 +125,11 @@ jobs:
           cp "$exe" "$ws/build/2/ToneArtStudio-Desktop/"
           (cd "$ws/build/2" && zip -qr "$out/ToneArtStudio-2-Desktop-and-Remote-Kit.zip" .)
 
+          # ---- 3. the source ---------------------------------------------------
           git archive --format=zip --prefix="Tone-Art-Studio-$VERSION/" \
             -o "$out/ToneArtStudio-3-Source-Code.zip" HEAD
 
+          # ---- 4. the browser build -------------------------------------------
           mkdir -p "$ws/build/4"
           cp -r "$ws/dist" "$ws/build/4/ToneArtStudio-Web"
           rm -rf "$ws/build/4/ToneArtStudio-Web/download"
@@ -117,15 +144,45 @@ jobs:
             > "$ws/build/4/ToneArtStudio-Web/README.txt"
           (cd "$ws/build/4" && zip -qr "$out/ToneArtStudio-4-Web-Build.zip" .)
 
-          (cd "$out" && zip -q -0 ToneArtStudio-ALL.zip ToneArtStudio-1-App-Installer.zip ToneArtStudio-2-Desktop-and-Remote-Kit.zip ToneArtStudio-3-Source-Code.zip ToneArtStudio-4-Web-Build.zip)
+          # ---- 5. the engine: ASIO, VST3 and the driver ------------------------
+          d=$ws/build/5/ToneArtStudio-5-Engine-ASIO-Driver
+          mkdir -p "$d"
+          cp "$ws/build/exe/$HOST" "$d/"
+          if [ -f "$ws/build/exe/$DRIVER" ]; then
+            cp "$ws/build/exe/$DRIVER" "$d/"
+          fi
+          printf '%s\r\n' \
+            "TONE ART STUDIO $VERSION - NATIVE ENGINE (ASIO)" \
+            '' \
+            "1. Double-click $HOST." \
+            '2. If Windows says "Windows protected your PC", click More info, then Run anyway.' \
+            '3. Accept the UAC prompt. Administrator rights are required: the virtual' \
+            '   ASIO driver registers itself machine-wide.' \
+            '4. Leave the audio driver task ticked. That registers the device' \
+            '   "Tone Art Virtual ASIO".' \
+            '' \
+            'This is the ASIO build: a real input/output device, VST3 hosting, and' \
+            'the Tone Art Gate plugin. It draws the same interface as the app.' \
+            '' \
+            "The driver on its own is $DRIVER, for a DAW you already use." \
+            > "$d/INSTALL-ENGINE.txt"
+          grep -E "  ($HOST|$DRIVER)$" "$ws/build/exe/SHA256SUMS.txt" | tr -d '\r' > "$d/SHA256.txt"
+          (cd "$ws/build/5" && zip -qr "$out/ToneArtStudio-5-Engine-ASIO-Driver.zip" .)
 
-          # Bare file names only. The first version of this line wrote the
-          # installer as an absolute path, which is not something anyone can
-          # check from the folder they downloaded into: `sha256sum -c` answers
-          # "no such file" instead of a verdict.
+          # ---- everything -----------------------------------------------------
+          (cd "$out" && zip -q -0 ToneArtStudio-ALL.zip \
+            ToneArtStudio-1-App-Installer.zip \
+            ToneArtStudio-2-Desktop-and-Remote-Kit.zip \
+            ToneArtStudio-3-Source-Code.zip \
+            ToneArtStudio-4-Web-Build.zip \
+            ToneArtStudio-5-Engine-ASIO-Driver.zip)
+
+          # Bare file names only: a sums file has to be usable with
+          # `sha256sum -c` from the folder the files are in, so nothing here
+          # carries a path.
           {
             (cd "$out" && sha256sum *.zip)
-            (cd "$(dirname "$exe")" && sha256sum "$(basename "$exe")")
+            (cd "$ws/build/exe" && sha256sum *)
           } > "$out/SHA256.txt"
           cat "$out/SHA256.txt" && ls -l "$out"
 
