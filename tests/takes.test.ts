@@ -213,6 +213,41 @@ describe('recording alignment', () => {
     expect(trimmed!.lengthBeats).toBeCloseTo(0.6);
   });
 
+  it('trims a take to the punch range', () => {
+    const frames = 96000; // 2 s at 48 kHz = 4 beats at 120 BPM
+    const samples = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) samples[i] = i;
+
+    const result: RecordingResult = {
+      channels: [samples],
+      sampleRate: 48000,
+      frames,
+      startTime: 10,
+      endTime: 12,
+    };
+
+    // Capture starts on beat 8; the punch range keeps beats 9 to 11.
+    const punched = takeFromRecording(result, { ctxTime: 10, beat: 8 }, 120, { start: 9, end: 11 });
+    expect(punched).not.toBeNull();
+    expect(punched!.startBeat).toBeCloseTo(9);
+    expect(punched!.lengthBeats).toBeCloseTo(2);
+    expect(punched!.channels[0]).toHaveLength(48000);
+    expect(punched!.channels[0][0]).toBe(24000);
+  });
+
+  it('drops a take that falls entirely outside the punch range', () => {
+    const result: RecordingResult = {
+      channels: [new Float32Array(48000)],
+      sampleRate: 48000,
+      frames: 48000,
+      startTime: 10,
+      endTime: 11,
+    };
+
+    // The braces sit before the transport ever reached them.
+    expect(takeFromRecording(result, { ctxTime: 10, beat: 8 }, 120, { start: 2, end: 6 })).toBeNull();
+  });
+
   it('cuts a loop pass into one take per lap plus a final partial', () => {
     const sampleRate = 48000;
     const lapFrames = 96000; // 4 beats at 120 BPM

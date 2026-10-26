@@ -193,8 +193,9 @@ export function takeFromRecording(
   // The punch points are arrangement beats; convert them to frame offsets from
   // the first captured frame so the take begins exactly on the punch-in point
   // and stops dead on punch-out, however long the transport had been rolling.
-  const skip = Math.round(Math.max(0, punch.start - fromBeat) * beatsPerSecond * result.sampleRate);
-  const keep = Math.round(Math.max(0, punch.end - Math.max(punch.start, fromBeat)) * beatsPerSecond * result.sampleRate);
+  const framesPerBeat = result.sampleRate / beatsPerSecond;
+  const skip = Math.round(Math.max(0, punch.start - fromBeat) * framesPerBeat);
+  const keep = Math.round(Math.max(0, punch.end - Math.max(punch.start, fromBeat)) * framesPerBeat);
   const startFrame = lead + Math.min(skip, frames);
   const endFrame = Math.min(lead + frames, startFrame + keep);
   const punched = endFrame - startFrame;
