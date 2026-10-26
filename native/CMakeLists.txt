@@ -129,7 +129,7 @@ endif()
 # --------------------------------------------------------------- the plugin
 # Tone Art Gate is a real VST3, built from the same project: the desktop host
 # can load it from the standard VST3 folder like any third-party plugin, and so
-# can any other DAW. Installer copies it to {commoncf}\\VST3.
+# can any other DAW. Installer copies it to {commoncf}\VST3.
 
 if(HYBRID_BUILD_GATE_VST3)
   juce_add_plugin(ToneArtGate
