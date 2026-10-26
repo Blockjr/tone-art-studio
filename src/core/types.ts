@@ -195,6 +195,12 @@ export interface Project {
   master: { volume: number; devices: DeviceState[] };
   returns: ReturnState[];
   loop: { enabled: boolean; start: number; end: number };
+  /**
+   * Punch in/out. The loop braces double as the punch points, the way Ableton
+   * does it: `in` stops capture before the loop start, `out` stops it after the
+   * loop end, and either can be used without the other.
+   */
+  punch?: { in: boolean; out: boolean };
   /** arrangement length in beats */
   length: number;
 }

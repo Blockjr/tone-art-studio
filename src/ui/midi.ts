@@ -28,6 +28,11 @@ const MAP_KEY = 'tas.midimap';
 
 export interface MidiPanelOptions {
   onOpenNotes?: () => void;
+  /**
+   * Every note played, whether from a port or the computer keyboard, so the
+   * arranger can record it. `down` is false on the matching release.
+   */
+  onNote?: (pitch: number, velocity: number, down: boolean) => void;
   toast?: (message: string) => void;
 }
 
@@ -81,9 +86,14 @@ export class MidiPanel {
     this.map = readMap();
 
     this.input = new MidiInput({
-      onNoteOn: (pitch, velocity) => void this.playNote(pitch, velocity),
-      onNoteOff: () => {
-        // Live notes are one-shots with a release tail; nothing to stop.
+      onNoteOn: (pitch, velocity) => {
+        void this.playNote(pitch, velocity);
+        this.options.onNote?.(pitch, velocity, true);
+      },
+      onNoteOff: (pitch) => {
+        // Live notes are one-shots with a release tail; nothing to stop, but a
+        // recording still needs to know when the key came up.
+        this.options.onNote?.(pitch, 0, false);
       },
       onControl: (event) => this.onControl(event.controller, event.value),
       onPorts: (ports) => this.renderPorts(ports),

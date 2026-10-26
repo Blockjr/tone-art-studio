@@ -75,6 +75,18 @@ import {
   type RecordingResult,
 } from './audio/recorder';
 import { clipFromTake, compOverRange, takeName, takesForTrack } from './core/takes';
+import {
+  endAllNotes,
+  endNote as endCapturedNote,
+  placeMidiPass,
+  punchAllowsEnd,
+  punchAllowsOn,
+  startNote as startCapturedNote,
+  wrapIntoLoop,
+  type CapturedNote,
+  type HeldNote,
+  type PlacedPass,
+} from './core/midicapture';
 import { NativeBridge, announceUiReady } from './native/bridge';
 import { PreviewPanel } from './ui/preview';
 import { PreviewPlayer } from './audio/preview';
@@ -159,6 +171,9 @@ const midiPanel = new MidiPanel(store, engine, {
   onOpenNotes: () => {
     openNotes();
   },
+  // Notes from a port and from the computer keyboard both arrive here, which is
+  // what lets record capture either source without the MIDI panel knowing.
+  onNote: (pitch, velocity, down) => captureMidiNote(pitch, velocity, down),
   toast,
 });
 const mixer = new Mixer(store, engine, $('mixer-strips'), {
@@ -204,8 +219,25 @@ let recording: {
   anchor: { beat: number; ctxTime: number };
   /** the loop being recorded, frozen when the take started */
   loop: { start: number; end: number } | null;
+  /** punch range in force when the pass started */
+  punch: { start: number; end: number } | null;
   limitReached?: boolean;
 } | null = null;
+
+/**
+ * A MIDI pass in progress. MIDI needs no input device, so it is tracked apart
+ * from the audio capture and can run with it or on its own.
+ */
+let midiRecording: {
+  trackId: string;
+  /** arrangement beat the pass starts on: the loop start, or the playhead */
+  startBeat: number;
+  loop: { start: number; end: number } | null;
+  punch: { start: number; end: number; in: boolean; out: boolean } | null;
+  held: HeldNote[];
+  captured: CapturedNote[];
+} | null = null;
+let midiWatch: number | null = null;
 
 const takePanel = new TakePanel(
   store,
@@ -600,13 +632,42 @@ let recordingStarting = false;
 
 function syncRecordButton(): void {
   const button = $('btn-record');
-  button.classList.toggle('is-on', recording !== null);
-  button.setAttribute('aria-pressed', recording ? 'true' : 'false');
-  button.title = recording
-    ? 'Stop recording (R)'
-    : store.project.loop.enabled
-      ? 'Record onto the armed audio track — one take per loop lap (R)'
-      : 'Record onto the armed audio track (R)';
+  const active = recording !== null || midiRecording !== null;
+  button.classList.toggle('is-on', active);
+  button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  if (active) {
+    button.title = 'Stop recording (R)';
+    return;
+  }
+
+  const midiArmed = store.project.tracks.some((track) => track.kind === 'midi' && track.armed);
+  const audioArmed = store.project.tracks.some((track) => track.kind === 'audio' && track.armed);
+  const target =
+    midiArmed && audioArmed
+      ? 'the armed tracks'
+      : midiArmed
+        ? 'the armed MIDI track'
+        : audioArmed
+          ? 'the armed audio track'
+          : 'an armed track';
+  button.title = store.project.loop.enabled
+    ? `Record onto ${target} (R) — with the loop on, every lap adds to the same pass`
+    : `Record onto ${target} (R)`;
+}
+
+/**
+ * The punch range, or null when neither switch is on.
+ *
+ * Ableton's model, adopted here because it needs no second pair of points: the
+ * arrangement loop braces are the punch points, and Punch-In / Punch-Out decide
+ * which ends are enforced. The loop itself does not have to be enabled.
+ */
+function punchRange(): { start: number; end: number; in: boolean; out: boolean } | null {
+  const flags = store.project.punch;
+  const loop = store.project.loop;
+  if (!flags || (!flags.in && !flags.out)) return null;
+  if (loop.end - loop.start < 0.05) return null;
+  return { start: loop.start, end: loop.end, in: flags.in, out: flags.out };
 }
 
 function waitForAnchor(timeoutMs: number): Promise<{ beat: number; ctxTime: number } | null> {
@@ -629,7 +690,7 @@ function waitForAnchor(timeoutMs: number): Promise<{ beat: number; ctxTime: numb
 }
 
 async function startRecording(): Promise<void> {
-  if (recording) {
+  if (recording || midiRecording) {
     stopRecording();
     return;
   }
@@ -637,13 +698,40 @@ async function startRecording(): Promise<void> {
   recordingStarting = true;
 
   try {
-  const armed = store.project.tracks.filter((track) => track.kind === 'audio' && track.armed);
+  const armedMidi = store.project.tracks.filter((entry) => entry.kind === 'midi' && entry.armed);
+  const midiTrack = armedMidi.find((entry) => entry.id === store.selectedTrackId) ?? armedMidi[0];
+  const armed = store.project.tracks.filter((entry) => entry.kind === 'audio' && entry.armed);
   const track = armed.find((candidate) => candidate.id === store.selectedTrackId) ?? armed[0];
 
-  if (!track) {
-    toast('Arm an audio track to record');
+  if (!track && !midiTrack) {
+    toast('Arm a MIDI or audio track to record');
     closeFloating('takes');
     takePanel.open();
+    return;
+  }
+
+  const projectLoop = store.project.loop;
+  const loopPass = projectLoop.enabled && projectLoop.end - projectLoop.start >= 0.05;
+
+  if (!track && midiTrack) {
+    // A MIDI pass needs no input device, so the transport can roll straight
+    // away and capture simply follows the notes the panel reports.
+    const midiStart = loopPass ? projectLoop.start : engine.positionBeat;
+    if (loopPass && (engine.isPlaying || engine.isCountingIn)) engine.pause();
+    try {
+      await engine.play(midiStart, { countIn: engine.countIn });
+    } catch (error) {
+      console.error(error);
+      toast('The transport could not start recording');
+      return;
+    }
+    const midiAnchor = await waitForAnchor(20000);
+    if (!midiAnchor) {
+      engine.pause();
+      toast('Recording could not start');
+      return;
+    }
+    beginMidiRecording(midiTrack, midiStart, loopPass ? { start: projectLoop.start, end: projectLoop.end } : null);
     return;
   }
 
@@ -698,9 +786,14 @@ async function startRecording(): Promise<void> {
     trackId: track.id,
     anchor,
     loop: loopRecord ? { start: loop.start, end: loop.end } : null,
+    punch: loopRecord ? null : punchRange(),
   };
   syncRecordButton();
   takePanel.setRecording(true, loopRecord);
+
+  // Both kinds of track can be armed at once; the audio pass above already
+  // started the transport, so the MIDI capture joins it from the same beat.
+  if (midiTrack) beginMidiRecording(midiTrack, startBeat, loopRecord ? { start: loop.start, end: loop.end } : null);
 
   // A remote stop or any other transport stop ends the take too. Loop
   // recording rolls until the user stops, so capture also has a hard limit.
@@ -802,6 +895,9 @@ function commitLoopTakes(
 }
 
 function stopRecording(): void {
+  // The MIDI pass is committed first: it only needs the note list, and the
+  // audio path below can still bail out on a take that was too short.
+  finishMidiRecording();
   if (!recording) return;
 
   const session = recording;
@@ -840,7 +936,7 @@ function stopRecording(): void {
     return;
   }
 
-  const trimmed = takeFromRecording(result, session.anchor, store.project.bpm);
+  const trimmed = takeFromRecording(result, session.anchor, store.project.bpm, session.punch ?? undefined);
   if (!trimmed) {
     toast('The take was too short to keep');
     return;
@@ -891,6 +987,101 @@ function stopRecording(): void {
   takePanel.refresh();
 }
 
+// ------------------------------------------------------------ MIDI recording
+
+/** Where a transport beat falls inside the pass being recorded. */
+function passBeat(
+  session: { startBeat: number; loop: { start: number; end: number } | null },
+  beat: number,
+): number {
+  return session.loop ? wrapIntoLoop(session.loop, beat) : Math.max(0, beat - session.startBeat);
+}
+
+function beginMidiRecording(
+  track: Track,
+  startBeat: number,
+  loop: { start: number; end: number } | null,
+): void {
+  midiRecording = {
+    trackId: track.id,
+    startBeat,
+    loop,
+    // The braces and the loop perform the same trimming, so punch only has to
+    // do anything when the pass is not already bounded by a loop.
+    punch: loop ? null : punchRange(),
+    held: [],
+    captured: [],
+  };
+
+  if (midiWatch !== null) window.clearInterval(midiWatch);
+  midiWatch = window.setInterval(() => {
+    if (!midiRecording) return;
+    if (!engine.isPlaying && !engine.isCountingIn) stopRecording();
+  }, 200);
+
+  syncRecordButton();
+  toast(`Recording MIDI on ${track.name}`);
+}
+
+/**
+ * Every note the MIDI panel reports arrives here, from a port or the computer
+ * keyboard. Notes outside the punch range are dropped at their note-on, and a
+ * note still held when punch-out passes ends on the punch-out point.
+ */
+function captureMidiNote(pitch: number, velocity: number, down: boolean): void {
+  const session = midiRecording;
+  if (!session) return;
+  // The count-in is heard, not recorded.
+  if (engine.isCountingIn) return;
+
+  const beat = engine.positionBeat;
+  if (!down) {
+    endCapturedNote(session.held, session.captured, pitch, passBeat(session, punchAllowsEnd(session.punch, beat)));
+    return;
+  }
+  if (!punchAllowsOn(session.punch, beat)) return;
+  startCapturedNote(session.held, session.captured, pitch, velocity, passBeat(session, beat));
+}
+
+/** Commits the pass as one undo step: a new clip, or an overdub into the one
+ * already under the pass start. */
+function finishMidiRecording(): void {
+  const session = midiRecording;
+  if (!session) return;
+  midiRecording = null;
+
+  if (midiWatch !== null) {
+    window.clearInterval(midiWatch);
+    midiWatch = null;
+  }
+
+  endAllNotes(session.held, session.captured, passBeat(session, Math.max(0, engine.positionBeat)));
+  syncRecordButton();
+
+  if (session.captured.length === 0) {
+    toast('No MIDI notes were captured');
+    return;
+  }
+
+  let placed: PlacedPass | null = null;
+  store.edit('structure', (project) => {
+    placed = placeMidiPass(project, session.trackId, session.startBeat, session.captured);
+    const clip = placed ? project.clips.find((candidate) => candidate.id === placed!.clipId) : undefined;
+    if (clip) project.length = Math.max(project.length, clip.start + clip.length);
+  });
+
+  const result = placed as PlacedPass | null;
+  if (!result) {
+    toast('The MIDI pass could not be placed');
+    return;
+  }
+
+  store.selectClip(result.clipId);
+  const notes = session.captured.length;
+  const label = `${notes} note${notes === 1 ? '' : 's'}`;
+  toast(result.merged ? `Overdubbed ${label} into the clip` : `Recorded ${label}`);
+}
+
 function auditionTake(take: Take, range: { start: number; end: number }): void {
   const ctx = engine.context;
   const asset = store.assetById(take.assetId);
@@ -929,6 +1120,8 @@ const btnPlay = $('btn-play');
 const btnLoop = $('btn-loop');
 const btnMetro = $('btn-metro');
 const btnCountIn = $('btn-countin');
+const btnPunchIn = $('btn-punch-in');
+const btnPunchOut = $('btn-punch-out');
 const tempoInput = $<HTMLInputElement>('tempo-input');
 const metronomeMenu = new MetronomeMenu({
   get: () => engine.metronomeSettings,
@@ -947,6 +1140,15 @@ function refreshTransport(): void {
   )} – ${formatBars(store.project.loop.end, store.project.beatsPerBar)} (L)`;
   btnMetro.classList.toggle('is-on', engine.metronome);
   btnMetro.title = `Metronome ${engine.metronome ? 'on' : 'off'} (K) · settings ▾`;
+  const punch = store.project.punch ?? { in: false, out: false };
+  const braces = `${formatBars(store.project.loop.start, store.project.beatsPerBar)} – ${formatBars(
+    store.project.loop.end,
+    store.project.beatsPerBar,
+  )}`;
+  btnPunchIn.classList.toggle('is-on', punch.in);
+  btnPunchIn.title = `Punch in ${punch.in ? 'on' : 'off'} — capture starts at the loop start (${braces})`;
+  btnPunchOut.classList.toggle('is-on', punch.out);
+  btnPunchOut.title = `Punch out ${punch.out ? 'on' : 'off'} — capture stops at the loop end (${braces})`;
   btnCountIn.classList.toggle('is-on', engine.countIn);
   btnCountIn.classList.toggle('is-counting', counting.active);
   btnCountIn.title = `${countInLabel(engine.metronomeSettings)} (Shift+K)`;
@@ -961,7 +1163,7 @@ function refreshTransport(): void {
 }
 
 btnPlay.addEventListener('click', () => {
-  if (recording) {
+  if (recording || midiRecording) {
     stopRecording();
     return;
   }
@@ -969,7 +1171,7 @@ btnPlay.addEventListener('click', () => {
 });
 
 $('btn-record').addEventListener('click', () => {
-  if (recording) stopRecording();
+  if (recording || midiRecording) stopRecording();
   else void startRecording();
 });
 
@@ -981,7 +1183,7 @@ $('btn-takes').addEventListener('click', () => {
 });
 
 $('btn-stop').addEventListener('click', () => {
-  if (recording) stopRecording();
+  if (recording || midiRecording) stopRecording();
   engine.stop();
 });
 $('btn-rewind').addEventListener('click', () => timeline.seek(0));
@@ -1048,6 +1250,27 @@ btnLoop.addEventListener('click', () => {
     project.loop.enabled = !project.loop.enabled;
   });
 });
+
+function togglePunch(which: 'in' | 'out'): void {
+  store.edit('transport', (project) => {
+    const punch = project.punch ?? { in: false, out: false };
+    project.punch = { ...punch, [which]: !punch[which] };
+  });
+
+  const flags = store.project.punch ?? { in: false, out: false };
+  const loop = store.project.loop;
+  const point = which === 'in' ? loop.start : loop.end;
+  const where = formatBars(point, store.project.beatsPerBar);
+  toast(
+    flags[which]
+      ? `Punch ${which} on — capture ${which === 'in' ? 'starts' : 'stops'} at ${where}`
+      : `Punch ${which} off`,
+  );
+  refreshTransport();
+}
+
+btnPunchIn.addEventListener('click', () => togglePunch('in'));
+btnPunchOut.addEventListener('click', () => togglePunch('out'));
 
 btnMetro.addEventListener('click', () => {
   engine.setMetronome(!engine.metronome);
@@ -2211,10 +2434,10 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
-  // R records onto the armed audio track.
+  // R records onto the armed tracks, audio or MIDI.
   if (!event.shiftKey && command === 'r') {
     event.preventDefault();
-    if (recording) stopRecording();
+    if (recording || midiRecording) stopRecording();
     else void startRecording();
     return;
   }
@@ -2222,7 +2445,7 @@ document.addEventListener('keydown', (event) => {
   switch (event.key) {
     case ' ':
       event.preventDefault();
-      if (recording) {
+      if (recording || midiRecording) {
         stopRecording();
         break;
       }

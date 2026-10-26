@@ -32,7 +32,7 @@ Status key: **Done** ships and is verified in this build · **Partial** works wi
 | Click subdivisions | **Done** | Quarter, eighth or sixteenth clicks, with the downbeat accented. |
 | Count-in / pre-roll | **Done** | 1, 2 or 4 bars before playback; Shift+K toggles it, the readout counts down, Stop cancels it. It follows the project meter; count-in on a recording take waits on capture. |
 | Tap tempo | **Done** | T or TAP; 40–260 BPM, following the usual two-second tap window. |
-| Punch in / out | **Planned** | Punch points are drawn but capture does not start/stop on them yet. |
+| Punch in / out | **Done** | IN and OUT in the transport, using the loop braces as the punch points the way Ableton does: IN drops everything before the loop start, OUT everything after the loop end, either works without the loop running, and both are saved with the project. Audio takes are trimmed in the recorder; MIDI notes outside the range are never captured and a note held past punch-out ends on it. |
 | Loop recording and takes | **Done** | With the loop on, Record starts at the loop start and every lap becomes its own take, aligned to the loop; the last complete lap is placed in the arrangement and a lap cut short becomes a partial take. All laps stay in the Takes panel for comping, and one undo step removes the pass. Capture stops at five minutes. |
 | Marker-based loop range | **Done** | L loops the drawn range when there is one, otherwise between the markers either side of the playhead (or the last pair); pressing it again on that exact marker loop turns the loop off. Shift+L still loops a clip. |
 | Selection-range playback | **Done** | Shift+drag the ruler draws a range; Space plays it once and parks on its end, and L loops it. Drawn in blue across ruler and lanes, cleared by a plain locate. |
@@ -56,7 +56,7 @@ that matter for keeping time without turning the top bar into a second mixer.
 | Count-in visual | **Done** | The position readout and count-in button show the remaining count; the button pulses. |
 | Tap tempo | **Done** | T / TAP; tempo 40–260 BPM. |
 | Settings persistence | **Done** | Click sound, level, accent, subdivision, count-in and count-in length are saved per browser. |
-| Count-in for recording / punch | **Partial** | Capture starts with the count-in and the pre-roll is trimmed at the first beat, so the take lands on the grid; loop recording counts in once, before the first lap. Punch in/out is not wired to capture yet. |
+| Count-in for recording / punch | **Done** | Capture starts with the count-in and the pre-roll is trimmed at the first beat, so the take lands on the grid; loop recording counts in once, before the first lap, and MIDI notes played during the count-in are heard but not recorded. |
 | Click output routing | **Planned** | The click currently shares the master input; a separate cue output would need a dedicated monitor bus. |
 
 ## Recording
@@ -68,9 +68,9 @@ that matter for keeping time without turning the top bar into a second mixer.
 | Import audio recordings | **Done** | Import Audio in the browser; WAV/MP3 decode, waveform peaks, embedded in the project file. |
 | Take management | **Done** | Every pass is kept with its waveform; takes are listed per track, auditioned over a range, and saved with the project, including their audio. |
 | Comping | **Partial** | Shift-drag the ruler and click Use range on a take: the comp replaces that span, splits or trims the clips it crosses, fades each edge and is one undo step. Take lanes in the arrangement and automatic crossfade matching between comps are not built. |
-| Punch in / out recording | **Planned** | Punch points are drawn and saved, but capture does not start or stop on them. |
+| Punch in / out recording | **Done** | Uses the loop braces as punch points (see Transport). A take that falls entirely outside the braces is dropped rather than placed, and a pass recorded in the braces keeps only that span. |
 | Record with latency compensation | **Partial** | Takes align to the transport anchor (capture pre-roll is trimmed), but device round-trip latency is not measured and compensated. |
-| MIDI recording from a keyboard | **Planned** | Needs Web MIDI input and a wait-for-note capture mode. |
+| MIDI recording from a keyboard | **Done** | Arm a MIDI track and press Record: notes from a Web MIDI port or the computer keyboard land at their transport positions in one undoable pass. With the loop on every lap adds to the same clip (overdub); recording over a clip that covers the pass start overdubs into it and grows it instead of stacking a second clip. Nothing is captured during the count-in, punch in/out trims the pass, and a pass with no notes says so rather than creating an empty clip. The armed track that is selected is the one recorded, because that is the track the notes are played through. |
 
 ## MIDI editing
 
@@ -156,8 +156,8 @@ that matter for keeping time without turning the top bar into a second mixer.
 
 ## Known gaps against an industry-standard DAW
 
-Largest first: take lanes in the arrangement, punch recording, automation
-lanes, MIDI import/export, group buses and sidechain, MIDI recording, dither, a
-separate click/cue output, latency compensation for takes, manual warp markers
-and groove templates for audio quantize.
+Largest first: automation lanes, take lanes in the arrangement, MIDI
+import/export, group buses and sidechain, dither, a separate click/cue output,
+latency compensation for takes, manual warp markers and groove templates for
+audio quantize.
 These are the items to build next; each is listed as **Planned** above.

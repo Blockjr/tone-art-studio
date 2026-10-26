@@ -163,6 +163,8 @@ export function takeFromRecording(
   result: RecordingResult,
   anchor: TransportAnchor,
   bpm: number,
+  /** punch range in arrangement beats; capture outside it is discarded */
+  punch?: { start: number; end: number },
 ): { channels: Float32Array[]; startBeat: number; lengthBeats: number } | null {
   if (result.frames <= 0 || result.sampleRate <= 0) return null;
 
@@ -178,10 +180,31 @@ export function takeFromRecording(
   if (frames < 16) return null;
 
   const beatsPerSecond = bpm / 60;
+  const fromBeat = Math.max(0, anchor.beat + lateSeconds * beatsPerSecond);
+
+  if (!punch) {
+    return {
+      channels: merged.map((channel) => channel.slice(lead, lead + frames)),
+      startBeat: fromBeat,
+      lengthBeats: (frames / result.sampleRate) * beatsPerSecond,
+    };
+  }
+
+  // The punch points are arrangement beats; convert them to frame offsets from
+  // the first captured frame so the take begins exactly on the punch-in point
+  // and stops dead on punch-out, however long the transport had been rolling.
+  const skip = Math.round(Math.max(0, punch.start - fromBeat) * beatsPerSecond * result.sampleRate);
+  const keep = Math.round(Math.max(0, punch.end - Math.max(punch.start, fromBeat)) * beatsPerSecond * result.sampleRate);
+  const startFrame = lead + Math.min(skip, frames);
+  const endFrame = Math.min(lead + frames, startFrame + keep);
+  const punched = endFrame - startFrame;
+
+  if (punched < 16) return null;
+
   return {
-    channels: merged.map((channel) => channel.slice(lead, lead + frames)),
-    startBeat: Math.max(0, anchor.beat + lateSeconds * beatsPerSecond),
-    lengthBeats: (frames / result.sampleRate) * beatsPerSecond,
+    channels: merged.map((channel) => channel.slice(startFrame, endFrame)),
+    startBeat: Math.max(punch.start, fromBeat),
+    lengthBeats: (punched / result.sampleRate) * beatsPerSecond,
   };
 }
 

@@ -501,8 +501,28 @@ named in order, so a comp can pick the best lap for each phrase. The last
 complete lap is placed in the arrangement as you stop; a lap cut short is kept
 as a partial take rather than discarded. The whole pass is one undo step, takes
 stay in the panel between sessions, and capture stops itself after five minutes
-so an unattended take cannot exhaust memory. Punch in/out is still the next
-stage; `FEATURES.md` tracks that gap.
+so an unattended take cannot exhaust memory.
+
+**Punch in** and **punch out** take their points from the loop braces, the way
+Ableton does: IN keeps nothing before the loop start, OUT nothing after the loop
+end, either works without the loop running, and both switches are saved with the
+project. Audio is trimmed inside the recorder, so the take holds exactly the
+braced span; a take that falls entirely outside it is dropped instead of landing
+on the timeline.
+
+## Recording MIDI
+
+Arm a MIDI track and press **Record**. Notes arrive from a controller (enable the
+port in **MIDI → Enable MIDI inputs**) or from the computer keyboard while the
+MIDI panel is open, and each note is placed at the transport position where it
+was played rather than where the last frame drew. The pass commits as one clip
+and one undo step.
+
+With the loop on, every lap adds into the same clip, so a drum pattern or a bass
+line is built a layer at a time. Recording over a clip that already covers the
+pass start overdubs into it and grows it rather than stacking a second clip on
+top. The count-in is heard but never recorded, punch in/out trims the pass, and a
+pass that captured nothing says so instead of leaving an empty clip behind.
 
 ## Sessions
 

@@ -1006,3 +1006,76 @@ describe('sample browser and folder import', () => {
     await wait(40);
   });
 });
+
+/**
+ * MIDI recording is the path a player uses: arm a MIDI track, press record,
+ * play, stop. It is checked through the real buttons rather than the capture
+ * module so the wiring itself is covered.
+ */
+describe('MIDI recording', () => {
+  it('records keyboard notes into a new clip on the armed MIDI track', async () => {
+    $('btn-stop').click();
+    await wait(60);
+    // The count-in would swallow the first notes; it is not what is under test.
+    if ($('btn-countin').classList.contains('is-on')) $('btn-countin').click();
+    await wait(40);
+
+    $('btn-add-midi').click();
+    await wait(80);
+
+    const head = document.querySelector('.track-head.is-selected');
+    expect(head, 'the new MIDI track should be selected').not.toBeNull();
+    const arm = head!.querySelector('button[data-action="arm"]') as HTMLButtonElement;
+    expect(arm).not.toBeNull();
+    arm.click();
+    await wait(60);
+
+    // The computer keyboard only plays while the MIDI panel is open. An
+    // earlier test may have left it open, so the state is checked rather than
+    // toggled blindly.
+    if (!document.getElementById('midi-panel')!.classList.contains('is-open')) {
+      $('btn-midi').click();
+    }
+    await wait(60);
+
+    const clips = (): number =>
+      Number(($('song-meta').textContent ?? '').match(/(\d+) clips/)?.[1] ?? '0');
+    const before = clips();
+
+    $('btn-record').click();
+    await wait(400);
+    expect($('btn-record').getAttribute('aria-pressed')).toBe('true');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    await wait(200);
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+    await wait(120);
+
+    $('btn-record').click();
+    await wait(250);
+
+    expect($('btn-record').getAttribute('aria-pressed')).toBe('false');
+    expect(clips()).toBe(before + 1);
+  });
+
+  it('offers punch in and punch out switches', async () => {
+    const punchIn = $('btn-punch-in');
+    const punchOut = $('btn-punch-out');
+    expect(punchIn.classList.contains('is-on')).toBe(false);
+
+    punchIn.click();
+    await wait(40);
+    expect(punchIn.classList.contains('is-on')).toBe(true);
+    expect(punchOut.classList.contains('is-on')).toBe(false);
+
+    punchOut.click();
+    await wait(40);
+    expect(punchOut.classList.contains('is-on')).toBe(true);
+
+    punchIn.click();
+    punchOut.click();
+    await wait(40);
+    expect(punchIn.classList.contains('is-on')).toBe(false);
+    expect(punchOut.classList.contains('is-on')).toBe(false);
+  });
+});

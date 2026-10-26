@@ -222,6 +222,7 @@ export function emptyProject(): Project {
     master: { volume: 0.86, devices: [createDevice('eq3'), cleanLimiter()] },
     returns: defaultReturns(),
     loop: { enabled: true, start: 0, end: 32 },
+    punch: { in: false, out: false },
     length: 64,
   };
 }
@@ -252,6 +253,7 @@ export function blankProject(name: string, bpm = 120, bars = 16): Project {
     master: { volume: 0.86, devices: [createDevice('eq3'), busCompressor(), cleanLimiter()] },
     returns: defaultReturns(),
     loop: { enabled: true, start: 0, end: Math.min(length, 32) },
+    punch: { in: false, out: false },
     length,
   };
 }
@@ -314,6 +316,7 @@ export function demoProject(): Project {
       volume: [0.85, 0.7, 0.5, 0.62][index] ?? bus.volume,
     })),
     loop: { enabled: true, start: 0, end: 32 },
+    punch: { in: false, out: false },
     length: 32,
   };
 }
