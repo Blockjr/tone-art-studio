@@ -6,13 +6,16 @@ build — nothing here needs to be updated when the version changes.
 
 | File | What it is | Get it if |
 |---|---|---|
+| `ToneArtStudio-ALL.zip` | **everything in one download**: the app installer, the desktop-and-remote kit, the complete source of that build, the compiled interface and the engine with its ASIO driver, each as a zip inside | you want the whole project in a single file |
 | `ToneArtStudioSetup-<version>.exe` | the installed desktop app. Its interface runs in its own bundled browser engine, and it carries the **tablet remote** | you want the app and the phone/tablet remote |
 | `ToneArtStudioHostSetup-<version>.exe` | the native engine: the same interface drawn by a JUCE host, with real **ASIO** input and output, VST3 hosting, and the **Tone Art Virtual ASIO driver registered at install time** | you want the DAW that opens an ASIO device |
 | `ToneArtVirtualAsio-<version>.zip` | the virtual ASIO driver on its own — the DLL, the registration script and a README | you only want the device, for another DAW |
-| `SHA256SUMS.txt` | the SHA-256 of each file above | to check a download before running it |
+| `SHA256SUMS.txt` | the SHA-256 of each file above, and of the five parts inside the bundle | to check a download before running it |
 
-Expect roughly 116 MB for the desktop app (it carries a browser engine), 10 MB
-for the native engine and 80 KB for the driver zip.
+The release page shows each file's size next to it. The desktop app is the
+largest of them, because it carries a browser engine, and the driver zip is the
+smallest. Unpack `ToneArtStudio-ALL.zip` to get the same pieces as separate
+zips, each with its own short install note.
 
 ## Which one is the DAW?
 
@@ -91,7 +94,9 @@ that in detail.
 ## Checksums
 
 The release publishes `SHA256SUMS.txt` next to the downloads, and the hashes are
-shown on the release page itself. Verify on Windows with:
+shown on the release page itself. It covers the standalone downloads and the
+five parts inside `ToneArtStudio-ALL.zip`, so a bundle can be checked without
+unpacking it first. Verify on Windows with:
 
 ```
 certutil -hashfile ToneArtStudioSetup-<version>.exe SHA256
