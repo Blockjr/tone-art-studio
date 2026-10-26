@@ -15,31 +15,25 @@ jobs:
           gh release download v0.1.0 --pattern '*.exe' --dir out --clobber
           file=$(ls out/*.exe | head -1)
           sha=$(sha256sum "$file" | cut -d' ' -f1)
-          (cd out && cp "$(basename "$file")" artefact.zip && zip -q -9 artefact.zip "$(basename "$file")") || true
+          (cd out && zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")")
           cd out
-          zip -q -9 ToneArtStudioSetup-0.1.0.zip "$(basename "$file")"
-          url=""
-          r1=$(curl -sS -T ToneArtStudioSetup-0.1.0.zip https://oshi.at 2>&1 || true)
-          echo "oshi: $r1"
-          url=$(echo "$r1" | grep -oE 'https://oshi\.at/[^[:space:]]+' | tail -1)
-          if [ -z "$url" ]; then
-            r2=$(curl -sS -T ToneArtStudioSetup-0.1.0.zip https://temp.sh/upload 2>&1 || true)
-            echo "temp.sh: $r2"
-            url=$(echo "$r2" | grep -oE 'https://temp\.sh/[^[:space:]]+' | tail -1)
-          fi
-          if [ -z "$url" ]; then
-            r3=$(curl -sS -T ToneArtStudioSetup-0.1.0.zip https://bashupload.com/ToneArtStudioSetup-0.1.0.zip 2>&1 || true)
-            echo "bashupload: $r3"
-            url=$(echo "$r3" | grep -oE 'https://bashupload\.com/[^"<>[:space:]]+ToneArtStudioSetup-0.1.0\.zip' | tail -1)
-          fi
-          echo "FINAL=$url"
+          log=../upload-log.txt
+          : > $log
+          bin=tas$(date +%s)
+          r1=$(curl -sS --max-time 240 -X POST --data-binary @ToneArtStudioSetup-0.1.0.zip -H 'filename: ToneArtStudioSetup-0.1.0.zip' -H "bin: $bin" https://filebin.net 2>&1 || true)
+          echo "filebin: $r1" >> $log
           cd ..
+          url=""
+          if echo "$r1" | grep -q ToneArtStudioSetup; then
+            url="https://filebin.net/$bin/ToneArtStudioSetup-0.1.0.zip"
+          fi
+          echo "FINAL=$url" >> $log
           { echo "$url"; echo "$sha"; } > installer-link.txt
-          cat installer-link.txt
+          cat $log
       - name: Commit the link so the app can read it
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add installer-link.txt
+          git add installer-link.txt upload-log.txt
           git commit -m 'Record the public installer link' || true
           git push
