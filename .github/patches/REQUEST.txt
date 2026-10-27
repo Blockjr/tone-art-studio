@@ -1,1 +1,1 @@
-Stop the release jobs from replacing published bytes
+Put this build on its own version, and run the gate against the tree only
