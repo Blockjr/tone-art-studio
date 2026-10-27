@@ -14,6 +14,11 @@ native/third_party/
 # fixed version this file exists to prevent.
 deliverables/
 
+# Hand-assembled bundles of the same kind (the desktop kit, a source zip). They
+# are copies of published release assets too, and the packaging job builds them
+# from the tree, so a committed copy is the fixed version described above.
+installer-dist/
+
 # Chat download bundle, not part of the source tree
 Tone-Art-Studio-*-source.zip
 

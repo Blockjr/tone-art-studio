@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
@@ -21,10 +22,17 @@ function appVersion() {
   };
 }
 
-const previewHost = 'pv-627b01a47f85-7a81c619-de3d-4e0d-9902-777f5f1581a7.style.dev';
+const previewHost = 'pv-627b01a47f85-de965689-a2ce-45d3-887c-53fedd5b2d2c.style.dev';
 
 export default defineConfig({
   plugins: [appVersion()],
+  test: {
+    // Only the tree is the suite. `artifacts/` holds scratch copies of the whole
+    // repository, built while assembling a patch, and the default pattern found
+    // their tests too: the gate ran the suite twice, once against a tree that is
+    // not the one being shipped, and took long enough to be cut off.
+    exclude: [...configDefaults.exclude, 'artifacts/**'],
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
