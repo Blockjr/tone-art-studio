@@ -1,0 +1,16 @@
+diff --git a/.github/workflows/package-downloads.yml b/.github/workflows/package-downloads.yml
+index 95825a0..4b1ca2a 100644
+--- a/.github/workflows/package-downloads.yml
++++ b/.github/workflows/package-downloads.yml
+@@ -254,2 +254,11 @@ jobs:
+           set -euo pipefail
++
++          # These are the bytes a download is checked against, so replacing
++          # them under a published name is refused; `gh release view` failing
++          # means a release with no assets (see scripts/release-guard.mjs).
++          gh release view "$TAG" --json assets --jq '.assets' > build/existing-assets.json \
++            || echo '[]' > build/existing-assets.json
++          node scripts/release-guard.mjs --tag "$TAG" --assets build/existing-assets.json \
++            build/out/*.zip build/out/SHA256SUMS.txt
++
+           gh release upload "$TAG" build/out/*.zip build/out/SHA256SUMS.txt --clobber
