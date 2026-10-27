@@ -1,0 +1,9 @@
+diff --git a/installer/ToneArtStudio.iss b/installer/ToneArtStudio.iss
+index 43f97d6..995f304 100644
+--- a/installer/ToneArtStudio.iss
++++ b/installer/ToneArtStudio.iss
+@@ -15,3 +15,3 @@
+ #ifndef MyAppVersion
+-  #define MyAppVersion "0.6.0"
++  #define MyAppVersion "0.6.1"
+ #endif
