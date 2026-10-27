@@ -1,0 +1,18 @@
+diff --git a/.github/workflows/native-windows.yml b/.github/workflows/native-windows.yml
+index c322788..ef17a54 100644
+--- a/.github/workflows/native-windows.yml
++++ b/.github/workflows/native-windows.yml
+@@ -173,3 +173,13 @@ jobs:
+ 
++          # A version's bytes are fixed once they are published: the guard
++          # allows a re-run of this build and refuses to replace what is there
++          # (see scripts/release-guard.mjs).
++          gh release view $tag --json assets --jq '.assets' `
++            | Set-Content -Path 'existing-assets.json' -Encoding utf8
++          if ($LASTEXITCODE -ne 0) { '[]' | Set-Content -Path 'existing-assets.json' -Encoding utf8 }
++
+           # An array expands to one argument per element for a native command.
++          node scripts/release-guard.mjs --tag $tag --assets existing-assets.json $files
++          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
++
+           gh release upload $tag $files --clobber
