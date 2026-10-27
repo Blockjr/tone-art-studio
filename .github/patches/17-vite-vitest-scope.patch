@@ -1,0 +1,18 @@
+diff --git a/vite.config.ts b/vite.config.ts
+index 4681000..c7949a9 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -26,6 +26,13 @@ const previewHost = 'pv-627b01a47f85-de965689-a2ce-45d3-887c-53fedd5b2d2c.style.
+ 
+ export default defineConfig({
+   plugins: [appVersion()],
++  test: {
++    // Only the tree is the suite. `artifacts/` holds scratch copies of the whole
++    // repository, built while assembling a patch, and the default pattern found
++    // their tests too: the gate ran the suite twice, once against a tree that is
++    // not the one being shipped, and took long enough to be cut off.
++    exclude: [...configDefaults.exclude, 'artifacts/**'],
++  },
+   server: {
+     host: '0.0.0.0',
+     port: 3000,
