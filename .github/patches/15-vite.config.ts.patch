@@ -1,0 +1,11 @@
+diff --git a/vite.config.ts b/vite.config.ts
+index f4643f7..9f2e9ef 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,5 +1,6 @@
+ import { readFileSync } from 'node:fs';
+ import { defineConfig } from 'vite';
++import { configDefaults } from 'vitest/config';
+ 
+ const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+ 
